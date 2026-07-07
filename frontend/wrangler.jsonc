@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dark-ships",
+  "compatibility_date": "2025-06-01",
+  // Static-assets-only Worker: serve the Vite build in ./dist. No Worker script.
+  // "single-page-application" serves index.html for unmatched paths so the
+  // client-side routes (/watchlist, /glossary, ...) resolve on direct load.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
