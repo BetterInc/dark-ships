@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: darkships
+      POSTGRES_PASSWORD: darkships
+      POSTGRES_DB: darkships
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U darkships"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "8025:8025"  # web UI
+      - "1025:1025"  # SMTP
+    restart: unless-stopped
+
+  # Local S3-compatible object storage for the cold tier (stands in for
+  # Cloudflare R2 in prod - same code, only the endpoint/keys change).
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # web console
+    volumes:
+      - miniodata:/data
+    restart: unless-stopped
+
+  # One-shot: create the cold-tier bucket once MinIO is up.
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do sleep 2; done;
+      mc mb --ignore-existing local/darkships-cold;
+      exit 0;"
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://darkships:darkships@postgres:5432/darkships
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+      MAIL_FROM: noreply@darkships.local
+      # Cold tier -> local MinIO (swap these for R2 creds in prod)
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: darkships-cold
+      S3_ACCESS_KEY_ID: minioadmin
+      S3_SECRET_ACCESS_KEY: minioadmin
+      S3_REGION: us-east-1
+      # Local = one combined process. In prod, split into RUN_MODE=web (scales)
+      # + a single RUN_MODE=worker replica for ingest/scheduler.
+      RUN_MODE: all
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/code/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+      minio:
+        condition: service_started
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/code
+      - /code/node_modules
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8000
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  miniodata:

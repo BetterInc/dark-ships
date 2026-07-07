@@ -1,0 +1,290 @@
+import asyncio
+import gzip
+import time
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, Query, Request, Response
+from pydantic import TypeAdapter
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..config import get_settings
+from ..db import get_session
+from ..models import Position, RiskEvent, Vessel, VesselRegistry
+from ..schemas import LatestPositionOut, RegionOut
+
+# The latest-positions snapshot is identical for every visitor and costs ~1s of
+# DB work + a few MB to build. Cache the finished JSON for a few seconds so 10k
+# concurrent pollers trigger ONE rebuild per window, not one per request. We cache
+# BOTH raw and pre-gzipped bytes: browsers accept gzip, and compressing a 4 MB body
+# per request would just move the bottleneck from the DB onto the CPU.
+# The lock stops a cache-miss stampede (only one request rebuilds; the rest wait).
+_LATEST_TTL = 15.0
+_latest_cache: dict[float, tuple[float, bytes, bytes]] = {}  # since_hours -> (ts, raw, gz)
+_latest_lock = asyncio.Lock()
+_latest_adapter = TypeAdapter(list[LatestPositionOut])
+# lets a CDN / reverse proxy serve the shared snapshot to every viewer, so the
+# origin handles ~1 request per window regardless of how many people are watching
+_CACHE_HEADERS = {"Cache-Control": "public, max-age=15", "Vary": "Accept-Encoding"}
+
+
+def _latest_response(request: Request, raw: bytes, gz: bytes) -> Response:
+    """Serve the pre-gzipped bytes to clients that accept gzip (all browsers),
+    raw otherwise - never re-compressing per request."""
+    if "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(gz, media_type="application/json",
+                        headers={**_CACHE_HEADERS, "Content-Encoding": "gzip"})
+    return Response(raw, media_type="application/json", headers=_CACHE_HEADERS)
+
+
+def ship_type_label(code: int | None) -> str | None:
+    """AIS ship-type code -> human label (tanker, cargo, fishing, ...)."""
+    if code is None:
+        return None
+    if 80 <= code <= 89:
+        return "tanker"
+    if 70 <= code <= 79:
+        return "cargo"
+    if 60 <= code <= 69:
+        return "passenger"
+    if 40 <= code <= 49:
+        return "high-speed craft"
+    if code == 30:
+        return "fishing"
+    if code in (31, 32, 52):
+        return "tug / tow"
+    if code == 33:
+        return "dredger"
+    if code == 35:
+        return "military"
+    if code in (36, 37):
+        return "sailing / pleasure"
+    if 50 <= code <= 59:
+        return "special craft"
+    return "other"
+
+# human-readable name for each detected pattern (mirrors the frontend labels)
+PATTERN_LABELS = {
+    "regional_gap": "went dark in coverage",
+    "identity_change": "identity change",
+    "midsea_appearance": "appeared mid-sea",
+    "impossible_jump": "impossible jump (spoofing)",
+    "rendezvous": "ship-to-ship rendezvous",
+    "drift_mismatch": "reappeared off predicted drift",
+    "oil_slick": "oil slick at transfer point",
+    "dark_association": "anchored among sanctioned ships",
+    "loitering": "loitering in a trafficking corridor",
+    "mmsi_collision": "one identity in two places",
+    "circle_spoofing": "GPS circle-spoofing",
+    "identity_integrity": "fabricated identity (bad MMSI/IMO)",
+    "flag_hop": "reflagged (one IMO, many MMSIs)",
+    "nav_status_lie": "claims anchored while moving",
+    "gfw_encounter": "met another vessel at sea (transshipment)",
+    "gfw_ais_gap": "disabled AIS (went dark)",
+    "gfw_loitering": "loitered offshore",
+    "draught_change": "changed draught at sea (possible cargo transfer)",
+    "risklist_ofac": "OFAC sanctions list",
+    "risklist_gur": "Ukraine GUR shadow-fleet list",
+    "risklist_eu": "EU port ban",
+    "risklist_uk": "UK sanctions list",
+    "risklist_uani": "UANI Iran-tanker list",
+    "risklist_canada": "Canada sanctions list",
+    "risklist_australia": "Australia sanctions list",
+    "risklist_switzerland": "Switzerland sanctions list",
+    "risklist_un1718": "UN (DPRK) sanctions list",
+    "risklist_iuu": "IUU illegal-fishing blacklist",
+    "risklist_eu_iuu": "EU IUU fishing list",
+    "risklist_kse": "KSE tanker tracker",
+    "risklist_parismou": "banned from EU ports (Paris MoU)",
+    "risklist_tokyomou": "detained by port control (Tokyo MoU)",
+    "risklist_blackseamou": "detained by port control (Black Sea MoU)",
+    "risklist_abujamou": "detained by port control (Abuja MoU)",
+}
+
+router = APIRouter(prefix="/api", tags=["positions"])
+
+
+@router.get("/positions/latest", response_model=list[LatestPositionOut])
+async def latest_positions(request: Request, since_hours: float = Query(24, le=24 * 7)):
+    """Most recent position per vessel (Postgres DISTINCT ON), incl. watchlist
+    info. Served from a short-lived shared cache: identical for all viewers, so
+    it is rebuilt at most once per _LATEST_TTL seconds no matter the traffic."""
+    now = time.monotonic()
+    cached = _latest_cache.get(since_hours)
+    if cached and now - cached[0] < _LATEST_TTL:
+        return _latest_response(request, cached[1], cached[2])
+    async with _latest_lock:
+        # re-check inside the lock: another request may have just rebuilt it
+        cached = _latest_cache.get(since_hours)
+        if cached and time.monotonic() - cached[0] < _LATEST_TTL:
+            return _latest_response(request, cached[1], cached[2])
+        from ..db import SessionLocal
+        async with SessionLocal() as session:
+            raw = await _build_latest(session, since_hours)
+        gz = gzip.compress(raw, compresslevel=6)  # compressed once per window
+        _latest_cache[since_hours] = (time.monotonic(), raw, gz)
+        return _latest_response(request, raw, gz)
+
+
+async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
+    """Run the expensive DISTINCT-ON query and return finished JSON bytes."""
+    since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    latest = (
+        select(Position)
+        .where(Position.ts >= since)
+        .distinct(Position.mmsi)
+        .order_by(Position.mmsi, Position.ts.desc())
+        .subquery()
+    )
+    result = await session.execute(
+        select(latest, Vessel.category, Vessel.name.label("vessel_name"),
+               Vessel.risk_score, Vessel.notes, VesselRegistry.ship_type,
+               VesselRegistry.name.label("registry_name"))
+        # active check in the JOIN: suppressed/removed ships must render as
+        # plain regional traffic, not keep their watchlist colors
+        .outerjoin(Vessel, (Vessel.mmsi == latest.c.mmsi) & Vessel.active.is_(True))
+        .outerjoin(VesselRegistry, VesselRegistry.mmsi == latest.c.mmsi)
+    )
+    rows = []
+    for r in result:
+        d = dict(r._mapping)
+        d["ship_type"] = ship_type_label(d.pop("ship_type", None))
+        # region ships rarely carry a name on the position row itself; fall back
+        # to the name we collected in the registry so the panel isn't just an MMSI
+        d["ship_name"] = d.get("ship_name") or d.pop("registry_name", None)
+        d.pop("registry_name", None)
+        rows.append(d)
+
+    # attach the specific detected patterns for watchlist ships, so an "other"
+    # (behavioural) dot can name exactly which pattern(s) tripped it
+    watch_mmsis = [r["mmsi"] for r in rows if r.get("category") is not None]
+    patterns: dict[int, list[str]] = {}
+    if watch_mmsis:
+        for mmsi, rule in await session.execute(
+            select(RiskEvent.mmsi, RiskEvent.rule).where(RiskEvent.mmsi.in_(watch_mmsis)).distinct()
+        ):
+            patterns.setdefault(mmsi, []).append(PATTERN_LABELS.get(rule, rule))
+    for r in rows:
+        r["patterns"] = patterns.get(r["mmsi"], [])
+    return _latest_adapter.dump_json([LatestPositionOut(**r) for r in rows])
+
+
+@router.get("/positions/world")
+async def world_positions(response: Response):
+    """Live in-memory snapshot of every terrestrially received ship worldwide
+    (world-feed mode). Not persisted - the map's ambient layer."""
+    from ..ingest.aisstream import get_world_snapshot
+    # identical for all viewers - let a CDN fan it out (polled every 120s client-side)
+    response.headers["Cache-Control"] = "public, max-age=30"
+    return get_world_snapshot()
+
+
+@router.get("/regions", response_model=list[RegionOut])
+async def regions():
+    return get_settings().ais_regions
+
+
+@router.get("/clusters")
+async def clusters(session: AsyncSession = Depends(get_session)):
+    """Groups of 3+ watchlist ships sitting anchored close together - the
+    ship-to-ship staging signature. A huddle of sanctioned tankers holding
+    position in one spot is where oil gets transferred and re-documented."""
+    from ..geo import haversine_km
+
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(hours=6)
+    # Only genuinely list-flagged ships count as "shadow fleet" here: exclude the
+    # 'other' category (behaviour-only + MoU-detention-only), which is not a
+    # sanctions/shadow-fleet listing and would otherwise inflate the anchorage
+    # counts with ordinary flagged traffic. (We also no longer tag a 'watchlist'
+    # position source - every ship is recorded region/world - so scope by MMSI.)
+    watch_mmsis = select(Vessel.mmsi).where(
+        Vessel.active.is_(True), Vessel.category != "other"
+    ).scalar_subquery()
+    latest = (
+        select(Position).where(Position.ts >= since, Position.mmsi.in_(watch_mmsis))
+        .distinct(Position.mmsi).order_by(Position.mmsi, Position.ts.desc()).subquery()
+    )
+    rows = (await session.execute(
+        select(latest, Vessel.name.label("vessel_name"), Vessel.category)
+        .join(Vessel, (Vessel.mmsi == latest.c.mmsi) & Vessel.active.is_(True))
+    )).all()
+    # anchored ships only
+    ships = [dict(r._mapping) for r in rows if (r._mapping["sog"] or 99) < 2.0]
+
+    # Which of these are on an actual GOVERNMENT sanctions list (vs only on a
+    # shadow-fleet watchlist like UANI/GUR) - so the panel can honestly say
+    # "N shadow-fleet ships, M sanctioned" rather than calling them all sanctioned.
+    gov_rules = ["risklist_ofac", "risklist_eu", "risklist_uk",
+                 "risklist_canada", "risklist_switzerland", "risklist_un1718"]
+    ship_mmsis = [s["mmsi"] for s in ships]
+    sanctioned: set[int] = set()
+    if ship_mmsis:
+        for (m,) in await session.execute(
+            select(RiskEvent.mmsi).where(
+                RiskEvent.mmsi.in_(ship_mmsis), RiskEvent.rule.in_(gov_rules)
+            ).distinct()
+        ):
+            sanctioned.add(m)
+
+    # Transitive spatial clustering: a whole anchorage is ONE cluster, not
+    # several fragments. Ships link if within 12 km of ANY cluster member, so
+    # the Port Said or Singapore anchorage merges into a single group.
+    unclustered = list(ships)
+    clusters = []
+    while unclustered:
+        group = [unclustered.pop()]
+        changed = True
+        while changed:
+            changed = False
+            rest = []
+            for s in unclustered:
+                if any(haversine_km(g["lat"], g["lon"], s["lat"], s["lon"]) <= 12.0 for g in group):
+                    group.append(s)
+                    changed = True
+                else:
+                    rest.append(s)
+            unclustered = rest
+        if len(group) >= 3:
+            clat = sum(s["lat"] for s in group) / len(group)
+            clon = sum(s["lon"] for s in group) / len(group)
+            clusters.append({
+                "lat": round(clat, 3), "lon": round(clon, 3), "count": len(group),
+                "sanctioned": sum(1 for s in group if s["mmsi"] in sanctioned),
+                "members": sorted(
+                    ({"mmsi": s["mmsi"], "name": s["vessel_name"], "category": s["category"]}
+                     for s in group), key=lambda m: m["name"] or ""),
+            })
+    clusters.sort(key=lambda c: -c["count"])
+    return clusters
+
+
+@router.get("/positions/history/{mmsi}")
+async def position_history(
+    mmsi: int,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    days: float = Query(365, le=3650),
+):
+    """Full track for one vessel, spanning the hot (Postgres) and cold (Parquet
+    on S3/R2) tiers transparently. Defaults to the last `days` days."""
+    from ..services import cold
+
+    now = datetime.now(timezone.utc)
+    end = end or now
+    start = start or (end - timedelta(days=days))
+    points = await cold.query_track(mmsi, start, end)
+    return {"mmsi": mmsi, "start": start.isoformat(), "end": end.isoformat(),
+            "count": len(points), "points": points}
+
+
+@router.get("/positions/cold/status")
+async def cold_status():
+    """What the cold tier holds: the archived months and their row counts."""
+    from ..services import cold
+
+    settings = get_settings()
+    if not settings.cold_storage_enabled:
+        return {"enabled": False, "bucket": None, "months": []}
+    return {"enabled": True, "bucket": settings.s3_bucket,
+            "months": await cold.archived_months()}

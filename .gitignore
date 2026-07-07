@@ -1,0 +1,26 @@
+# secrets / local environment (never commit real keys)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# node / frontend build
+node_modules/
+frontend/dist/
+dist/
+.vite/
+
+# logs / os / editor
+*.log
+.DS_Store
+.idea/
+.vscode/
