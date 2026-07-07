@@ -1,0 +1,22 @@
+# Non-secret runtime config. Secrets (DATABASE_URL, AUTH_SECRET, AIS/GFW keys,
+# S3 keys, OAuth) live in the `ds-secrets` Secret, applied out-of-band with
+# kubectl (see DEPLOY.md) - never in git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ds-config
+  namespace: dark-ships
+data:
+  FRONTEND_BASE_URL: "https://darkships.org"
+  # cold tier -> Wasabi (same account/pattern as prod-battle)
+  S3_ENDPOINT: "https://s3.eu-central-2.wasabisys.com"
+  S3_BUCKET: "dark-ships-cold"
+  S3_REGION: "eu-central-2"
+  # transactional mail via the shared Mailu VM (TLS on 465)
+  MAIL_HOST: "mail.prodbattle.com"
+  MAIL_PORT: "465"
+  MAIL_FROM: "noreply@darkships.org"
+  # AIS regions to ingest (JSON). Trim/extend as needed.
+  AIS_WORLD_FEED: "true"
+  REGION_THROTTLE_SECONDS: "60"
+  WORLD_THROTTLE_SECONDS: "60"

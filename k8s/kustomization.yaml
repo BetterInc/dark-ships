@@ -1,0 +1,11 @@
+# Declarative resources applied by CI (kubectl apply -k k8s/). The ds-secrets
+# Secret is intentionally NOT here - it's created once with kubectl and lives
+# only in the cluster (see DEPLOY.md).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - web.yaml
+  - worker.yaml
+  - ingress.yaml

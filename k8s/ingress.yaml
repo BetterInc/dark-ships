@@ -1,0 +1,28 @@
+# api.darkships.org -> web Service. Uses the shared cluster's ingress-nginx
+# (class "nginx") and cert-manager Let's Encrypt issuer ("letsencrypt-prod"),
+# the same ones prod-battle uses. Point api.darkships.org at the cluster node
+# IP in Cloudflare (DNS-only, unproxied) so cert-manager's HTTP-01 challenge
+# reaches nginx.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api
+  namespace: dark-ships
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "8m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["api.darkships.org"]
+      secretName: dark-ships-tls
+  rules:
+    - host: api.darkships.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port: { number: 8000 }

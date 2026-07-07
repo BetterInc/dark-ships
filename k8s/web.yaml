@@ -1,0 +1,50 @@
+# API tier: RUN_MODE=web, scales freely (no ingester/scheduler). Fronted by the
+# Service + Ingress below.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: dark-ships
+  labels: { app: dark-ships, tier: web }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: dark-ships, tier: web }
+  template:
+    metadata:
+      labels: { app: dark-ships, tier: web }
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/brammittendorff/dark-ships:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: RUN_MODE
+              value: "web"          # API only - safe to scale to N
+          envFrom:
+            - configMapRef: { name: ds-config }
+            - secretRef: { name: ds-secrets }
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "1000m", memory: "512Mi" }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: dark-ships
+spec:
+  selector: { app: dark-ships, tier: web }
+  ports:
+    - port: 8000
+      targetPort: 8000

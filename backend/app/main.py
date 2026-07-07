@@ -204,4 +204,8 @@ if google_oauth_client is not None:
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    # version is the deployed image SHA (set via APP_VERSION build arg); the CI
+    # smoke test polls this until it reports the just-rolled tag.
+    import os
+    return {"status": "ok", "version": os.getenv("APP_VERSION", "dev"),
+            "role": get_settings().run_mode}
