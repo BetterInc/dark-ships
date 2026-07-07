@@ -85,9 +85,8 @@ jobs:
             printf '%s' "$KC" > ~/.kube/config
           fi
           chmod 600 ~/.kube/config
-      - name: Apply manifests (namespace, config, ingress, deployments)
-        if: steps.guard.outputs.skip != 'true'
-        run: kubectl apply -k k8s/
+      # The k8s Deployments/Service/Ingress/ConfigMap are owned by the infra
+      # repo (prod-battle-infra modules/dark-ships). CI only rolls the image.
       - name: Roll worker first (it runs migrations), then web
         if: steps.guard.outputs.skip != 'true'
         env:
