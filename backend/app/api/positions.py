@@ -1,3 +1,4 @@
+import json
 import asyncio
 import gzip
 import time
@@ -104,25 +105,42 @@ PATTERN_LABELS = {
 router = APIRouter(prefix="/api", tags=["positions"])
 
 
-@router.get("/positions/latest", response_model=list[LatestPositionOut])
-async def latest_positions(request: Request, since_hours: float = Query(24, le=24 * 7)):
-    """Most recent position per vessel (Postgres DISTINCT ON), incl. watchlist
-    info. Served from a short-lived shared cache: identical for all viewers, so
-    it is rebuilt at most once per _LATEST_TTL seconds no matter the traffic."""
-    now = time.monotonic()
-    cached = _latest_cache.get(since_hours)
-    if cached and now - cached[0] < _LATEST_TTL:
-        return _latest_response(request, cached[1], cached[2])
+async def _rebuild_latest(since_hours: float) -> tuple[bytes, bytes]:
+    from ..db import SessionLocal
+    async with SessionLocal() as session:
+        raw = await _build_latest(session, since_hours)
+    gz = gzip.compress(raw, compresslevel=6)  # compressed once per window
+    _latest_cache[since_hours] = (time.monotonic(), raw, gz)
+    return raw, gz
+
+
+async def _refresh_latest_bg(since_hours: float) -> None:
     async with _latest_lock:
-        # re-check inside the lock: another request may have just rebuilt it
         cached = _latest_cache.get(since_hours)
         if cached and time.monotonic() - cached[0] < _LATEST_TTL:
+            return  # someone else already refreshed
+        try:
+            await _rebuild_latest(since_hours)
+        except Exception:
+            pass  # keep serving the stale copy; next request retries
+
+
+@router.get("/positions/latest", response_model=list[LatestPositionOut])
+async def latest_positions(request: Request, since_hours: float = Query(24, le=24 * 7)):
+    """Most recent position per vessel, incl. watchlist info. Served from a
+    short-lived shared cache, stale-while-revalidate: an expired cache is
+    served immediately while one background task rebuilds it - no visitor
+    ever waits on the rebuild."""
+    cached = _latest_cache.get(since_hours)
+    if cached:
+        if time.monotonic() - cached[0] >= _LATEST_TTL and not _latest_lock.locked():
+            asyncio.get_running_loop().create_task(_refresh_latest_bg(since_hours))
+        return _latest_response(request, cached[1], cached[2])
+    async with _latest_lock:
+        cached = _latest_cache.get(since_hours)  # built while we waited?
+        if cached:
             return _latest_response(request, cached[1], cached[2])
-        from ..db import SessionLocal
-        async with SessionLocal() as session:
-            raw = await _build_latest(session, since_hours)
-        gz = gzip.compress(raw, compresslevel=6)  # compressed once per window
-        _latest_cache[since_hours] = (time.monotonic(), raw, gz)
+        raw, gz = await _rebuild_latest(since_hours)
         return _latest_response(request, raw, gz)
 
 
@@ -172,7 +190,7 @@ async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
 # from the DB (latest position per ship, last 30 min), cached like /latest so
 # pollers don't stampede the DISTINCT-ON query.
 _WORLD_TTL = 30.0
-_world_cache: tuple[float, list[dict]] | None = None
+_world_cache: tuple[float, bytes, bytes] | None = None  # (ts, raw, gz)
 _world_lock = asyncio.Lock()
 
 
@@ -186,27 +204,50 @@ async def _build_world_from_db() -> list[dict]:
                    LatestPosition.ship_name)
             .where(LatestPosition.ts >= since)
         )
-        return [dict(r._mapping) for r in result]
+        # serialize ONCE here (30k rows through FastAPI's encoder per request
+        # cost ~2s of CPU); cache the finished bytes like /latest does
+        rows = [{**r._mapping, "ts": r.ts.isoformat()} for r in result]
+        return json.dumps(rows).encode()
+
+
+async def _rebuild_world() -> tuple[bytes, bytes]:
+    global _world_cache
+    raw = await _build_world_from_db()
+    gz = gzip.compress(raw, compresslevel=6)
+    _world_cache = (time.monotonic(), raw, gz)
+    return raw, gz
+
+
+async def _refresh_world_bg() -> None:
+    async with _world_lock:
+        if _world_cache and time.monotonic() - _world_cache[0] < _WORLD_TTL:
+            return
+        try:
+            await _rebuild_world()
+        except Exception:
+            pass  # keep serving the stale copy; next request retries
 
 
 @router.get("/positions/world")
-async def world_positions(response: Response):
+async def world_positions(request: Request):
     """Live snapshot of every terrestrially received ship worldwide - the
     map's ambient layer. Served from the ingester's memory when this process
-    runs it (worker / dev), from the DB otherwise (web pods)."""
+    runs it (worker / dev); on the web pods from latest_positions via a
+    stale-while-revalidate bytes cache, so no request waits on a rebuild."""
     from ..ingest.aisstream import get_world_snapshot
-    # identical for all viewers - let a CDN fan it out (polled every 120s client-side)
-    response.headers["Cache-Control"] = "public, max-age=30"
     snapshot = get_world_snapshot()
     if snapshot:
         return snapshot
-    global _world_cache
+    cached = _world_cache
+    if cached:
+        if time.monotonic() - cached[0] >= _WORLD_TTL and not _world_lock.locked():
+            asyncio.get_running_loop().create_task(_refresh_world_bg())
+        return _latest_response(request, cached[1], cached[2])
     async with _world_lock:
-        if _world_cache and time.monotonic() - _world_cache[0] < _WORLD_TTL:
-            return _world_cache[1]
-        rows = await _build_world_from_db()
-        _world_cache = (time.monotonic(), rows)
-        return rows
+        if _world_cache:
+            return _latest_response(request, _world_cache[1], _world_cache[2])
+        raw, gz = await _rebuild_world()
+        return _latest_response(request, raw, gz)
 
 
 @router.get("/regions", response_model=list[RegionOut])
