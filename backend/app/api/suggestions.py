@@ -78,10 +78,26 @@ async def list_suggestions(session: AsyncSession = Depends(get_session)):
 
     from ..ingest.aisstream import world_snapshot
 
+    # The in-memory snapshot only exists in the process that runs the ingester
+    # (worker / local all-in-one). On the web pods it is empty, which used to
+    # null every lat/lon here - so the map never drew the suspect rings in
+    # production. Fall back to the latest stored position for these <=100 ships.
+    latest_pos: dict[int, tuple[float, float]] = {}
+    missing = [m for m in mmsis if m not in world_snapshot]
+    if missing:
+        for m, lat, lon in await session.execute(
+            select(Position.mmsi, Position.lat, Position.lon)
+            .where(Position.mmsi.in_(missing), Position.ts >= since)
+            .distinct(Position.mmsi)
+            .order_by(Position.mmsi, Position.ts.desc())
+        ):
+            latest_pos[m] = (lat, lon)
+
     out = []
     for mmsi, score in scores:
         reg = registry.get(mmsi)
         live = world_snapshot.get(mmsi)
+        pos = (live["lat"], live["lon"]) if live else latest_pos.get(mmsi)
         out.append(SuggestionOut(
             mmsi=mmsi,
             imo=reg.imo if reg else None,
@@ -89,8 +105,8 @@ async def list_suggestions(session: AsyncSession = Depends(get_session)):
             score=float(score),
             on_watchlist=mmsi in watchlisted,
             last_seen=reg.last_seen if reg else None,
-            lat=live["lat"] if live else None,
-            lon=live["lon"] if live else None,
+            lat=pos[0] if pos else None,
+            lon=pos[1] if pos else None,
             events=[RiskEventOut(rule=e.rule, ts=e.ts, score=e.score,
                                  details=json.loads(e.details or "{}"))
                     for e in events_by_mmsi.get(mmsi, [])[:10]],
