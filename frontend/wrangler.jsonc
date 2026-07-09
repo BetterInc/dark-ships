@@ -8,5 +8,11 @@
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
-  }
+  },
+  // Custom domains: Cloudflare creates/owns the DNS records for these on
+  // deploy - no dashboard step needed.
+  "routes": [
+    { "pattern": "darkships.org", "custom_domain": true },
+    { "pattern": "www.darkships.org", "custom_domain": true }
+  ]
 }

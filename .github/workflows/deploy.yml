@@ -1,8 +1,9 @@
 name: deploy
 
 # Build the backend image, push to ghcr, then roll the k8s Deployments on the
-# shared Scaleway Kapsule cluster. The frontend deploys separately to Cloudflare
-# Workers. Serialized so rapid pushes don't race the rollout.
+# shared Scaleway Kapsule cluster. The frontend builds and deploys to Cloudflare
+# Workers (static assets) in its own job. Serialized so rapid pushes don't race
+# the rollout.
 on:
   push:
     branches: [main]
@@ -49,6 +50,48 @@ jobs:
             ${{ env.IMAGE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  frontend:
+    runs-on: ubuntu-latest
+    environment: production # gates CLOUDFLARE_* to this job
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard - CLOUDFLARE_API_TOKEN present?
+        id: guard
+        env:
+          CF: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [[ -z "$CF" ]]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN not set on the production env - skipping frontend deploy."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.skip != 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build (API on api.darkships.org)
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          VITE_API_BASE_URL: https://api.darkships.org
+        run: |
+          npm ci
+          npm run build
+      - name: Deploy to Cloudflare Workers (static assets)
+        if: steps.guard.outputs.skip != 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: frontend
 
   deploy:
     needs: [meta, build]
