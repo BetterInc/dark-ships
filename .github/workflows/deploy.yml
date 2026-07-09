@@ -92,6 +92,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: frontend
+          # the action's default wrangler 3.x can't deploy an assets-only
+          # Worker (no `main` script) - that needs wrangler 4
+          wranglerVersion: "4.107.1"
 
   deploy:
     needs: [meta, build]
