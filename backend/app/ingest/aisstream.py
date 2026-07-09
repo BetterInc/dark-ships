@@ -17,7 +17,7 @@ from sqlalchemy import insert
 
 from ..config import get_settings
 from ..db import SessionLocal
-from ..models import IngestHeartbeat, Position
+from ..models import IngestHeartbeat, LatestPosition, Position
 from .registry import RegistryTracker
 
 logger = logging.getLogger(__name__)
@@ -99,6 +99,23 @@ class PositionBuffer:
             try:
                 async with SessionLocal() as session:
                     await session.execute(insert(Position), rows)
+                    # maintain the one-row-per-ship current picture: the API's
+                    # "where is everything now" reads this instead of scanning
+                    # position history
+                    newest: dict[int, dict] = {}
+                    for r in rows:
+                        cur = newest.get(r["mmsi"])
+                        if cur is None or r["ts"] > cur["ts"]:
+                            newest[r["mmsi"]] = r
+                    from sqlalchemy.dialects.postgresql import insert as pg_ins
+                    stmt = pg_ins(LatestPosition).values(list(newest.values()))
+                    await session.execute(stmt.on_conflict_do_update(
+                        index_elements=["mmsi"],
+                        set_={c: getattr(stmt.excluded, c)
+                              for c in ("ts", "lat", "lon", "sog", "cog",
+                                        "heading", "nav_status", "ship_name", "source")},
+                        where=stmt.excluded.ts > LatestPosition.ts,
+                    ))
                     now = datetime.now(timezone.utc)
                     minute = now.replace(second=0, microsecond=0)
                     if self._last_heartbeat != minute:

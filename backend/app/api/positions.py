@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..db import get_session
-from ..models import Position, RiskEvent, Vessel, VesselRegistry
+from ..models import LatestPosition, Position, RiskEvent, Vessel, VesselRegistry
 from ..schemas import LatestPositionOut, RegionOut
 
 # The latest-positions snapshot is identical for every visitor and costs ~1s of
@@ -127,23 +127,21 @@ async def latest_positions(request: Request, since_hours: float = Query(24, le=2
 
 
 async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
-    """Run the expensive DISTINCT-ON query and return finished JSON bytes."""
+    """Build the current picture from latest_positions (one row per ship,
+    maintained by the ingester) - NOT by DISTINCT-ON scanning the position
+    history, which grows by millions of rows per day and took >10s."""
     since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
-    latest = (
-        select(Position)
-        .where(Position.ts >= since)
-        .distinct(Position.mmsi)
-        .order_by(Position.mmsi, Position.ts.desc())
-        .subquery()
-    )
     result = await session.execute(
-        select(latest, Vessel.category, Vessel.name.label("vessel_name"),
+        # __table__ expands to flat columns (like the old subquery select did),
+        # so dict(r._mapping) below keeps its shape
+        select(LatestPosition.__table__, Vessel.category, Vessel.name.label("vessel_name"),
                Vessel.risk_score, Vessel.notes, VesselRegistry.ship_type,
                VesselRegistry.name.label("registry_name"))
+        .where(LatestPosition.ts >= since)
         # active check in the JOIN: suppressed/removed ships must render as
         # plain regional traffic, not keep their watchlist colors
-        .outerjoin(Vessel, (Vessel.mmsi == latest.c.mmsi) & Vessel.active.is_(True))
-        .outerjoin(VesselRegistry, VesselRegistry.mmsi == latest.c.mmsi)
+        .outerjoin(Vessel, (Vessel.mmsi == LatestPosition.mmsi) & Vessel.active.is_(True))
+        .outerjoin(VesselRegistry, VesselRegistry.mmsi == LatestPosition.mmsi)
     )
     rows = []
     for r in result:
@@ -180,18 +178,13 @@ _world_lock = asyncio.Lock()
 
 async def _build_world_from_db() -> list[dict]:
     since = datetime.now(timezone.utc) - timedelta(minutes=30)
-    latest = (
-        select(Position)
-        .where(Position.ts >= since)
-        .distinct(Position.mmsi)
-        .order_by(Position.mmsi, Position.ts.desc())
-        .subquery()
-    )
     from ..db import SessionLocal
     async with SessionLocal() as session:
         result = await session.execute(
-            select(latest.c.mmsi, latest.c.ts, latest.c.lat, latest.c.lon,
-                   latest.c.sog, latest.c.cog, latest.c.ship_name)
+            select(LatestPosition.mmsi, LatestPosition.ts, LatestPosition.lat,
+                   LatestPosition.lon, LatestPosition.sog, LatestPosition.cog,
+                   LatestPosition.ship_name)
+            .where(LatestPosition.ts >= since)
         )
         return [dict(r._mapping) for r in result]
 

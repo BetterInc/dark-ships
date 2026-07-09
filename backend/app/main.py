@@ -53,6 +53,21 @@ async def init_db() -> None:
     # positions is monthly-partitioned: make sure the current + upcoming month
     # partitions exist before ingest starts inserting.
     await ensure_partitions()
+    # one-time seed of the per-ship current-picture table (kept fresh by the
+    # ingester's flush upserts thereafter): pay the history scan ONCE here,
+    # never again on the request path
+    async with engine.begin() as conn:
+        seeded = await conn.scalar(text("SELECT EXISTS (SELECT 1 FROM latest_positions)"))
+        if not seeded:
+            await conn.execute(text(
+                "INSERT INTO latest_positions "
+                "SELECT DISTINCT ON (mmsi) mmsi, ts, lat, lon, sog, cog, heading, "
+                "       nav_status, ship_name, source "
+                "FROM positions WHERE ts >= now() - interval '7 days' "
+                "ORDER BY mmsi, ts DESC "
+                "ON CONFLICT (mmsi) DO NOTHING"
+            ))
+            logger.info("Seeded latest_positions from position history")
 
 
 @asynccontextmanager

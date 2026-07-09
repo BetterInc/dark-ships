@@ -108,6 +108,26 @@ class Position(Base):
     )
 
 
+class LatestPosition(Base):
+    """One row per ship: its most recent position, upserted by the ingester on
+    every flush. 'Where is everything right now' reads ~30k rows here instead
+    of DISTINCT-ON scanning the ever-growing positions history (seconds today,
+    worse every day as retention builds toward 90 days)."""
+
+    __tablename__ = "latest_positions"
+
+    mmsi: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    lat: Mapped[float] = mapped_column(Float, nullable=False)
+    lon: Mapped[float] = mapped_column(Float, nullable=False)
+    sog: Mapped[float | None] = mapped_column(Float)
+    cog: Mapped[float | None] = mapped_column(Float)
+    heading: Mapped[float | None] = mapped_column(Float)
+    nav_status: Mapped[int | None] = mapped_column(Integer)
+    ship_name: Mapped[str | None] = mapped_column(String(128))
+    source: Mapped[str] = mapped_column(String(16), default="region")
+
+
 class AisGap(Base):
     __tablename__ = "ais_gaps"
 
