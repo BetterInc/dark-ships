@@ -2,12 +2,17 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "dark-ships",
   "compatibility_date": "2025-06-01",
-  // Static-assets-only Worker: serve the Vite build in ./dist. No Worker script.
+  // Static-assets Worker: serve the Vite build in ./dist, with a tiny script
+  // in front (run_worker_first) that 301s http:// -> https:// - plain-http
+  // visits fail CORS against the API otherwise.
   // "single-page-application" serves index.html for unmatched paths so the
   // client-side routes (/watchlist, /glossary, ...) resolve on direct load.
+  "main": "src-worker/index.js",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    "run_worker_first": true
   },
   // Custom domains: Cloudflare creates/owns the DNS records for these on
   // deploy - no dashboard step needed.
