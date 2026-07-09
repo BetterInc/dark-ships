@@ -210,7 +210,9 @@ main { flex: 1; min-height: 0; position: relative; }
   position: absolute; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 2;
   background: rgba(16, 29, 43, 0.94); border: 1px solid var(--line);
   border-radius: 6px; padding: 0.55rem 0.9rem; backdrop-filter: blur(4px);
-  display: flex; align-items: center; gap: 0.8rem; width: 360px;
+  /* min-width (not width): the "N watchlist ships shown" count must widen
+     the pill instead of overflowing past its rounded edge */
+  display: flex; align-items: center; gap: 0.8rem; min-width: 360px; max-width: 92vw;
 }
 .risk-slider label { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .risk-slider input[type=range] { flex: 1; }
