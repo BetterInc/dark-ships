@@ -1,3 +1,0 @@
-# SPA fallback: every path serves index.html so client-side routes
-# (/watchlist, /suggestions, /glossary, ...) resolve on direct load & refresh.
-/*    /index.html   200
