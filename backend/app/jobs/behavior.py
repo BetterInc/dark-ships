@@ -62,6 +62,11 @@ WEIGHTS = {
     "risklist_eu_iuu": 80.0,
 }
 
+# A single rule may contribute at most 3x its single-event score to a vessel's
+# total: repeated identical soft signals (e.g. one loitering episode per day)
+# must not stack without bound and drown out more serious single signals.
+RULE_SCORE_CAP_MULTIPLIER = 3
+
 # AIS navigational-status codes. Broadcasting "at anchor"/"moored" while
 # actually steaming is a deliberate deception (look innocent to filters).
 NAV_STOPPED = {1, 5}       # 1 = at anchor, 5 = moored
@@ -122,12 +127,14 @@ RISKLIST_WEIGHTS = {            # per-source overrides for the default above
     "risklist_ofac": 100.0,
     "risklist_parismou": 70.0,   # refused EU port access - strong, not a full sanction
     # PSC detention = substandard ship (old/poorly maintained), NOT proof of
-    # crime, and there are thousands. Kept BELOW the auto-add threshold so it
-    # corroborates other signals (a detained ship that also loiters/goes dark
-    # stacks past 50) without flooding the watchlist on its own.
-    "risklist_tokyomou": 25.0,
-    "risklist_blackseamou": 25.0,
-    "risklist_abujamou": 25.0,
+    # crime, and there are thousands. Kept BELOW the auto-add threshold (50) so
+    # it corroborates other signals (a detained ship that also loiters/goes
+    # dark stacks past 50) without flooding the watchlist on its own - but at
+    # 40 a genuine inspection failure ranks above one soft behavioural episode
+    # (e.g. a single GFW loitering event at 25).
+    "risklist_tokyomou": 40.0,
+    "risklist_blackseamou": 40.0,
+    "risklist_abujamou": 40.0,
 }
 
 SCORE_WINDOW_DAYS = 30
@@ -807,11 +814,20 @@ async def rule_risklist_matches(session) -> list[RiskEvent]:
 async def compute_scores(session, now: datetime) -> dict[int, float]:
     since = now - timedelta(days=SCORE_WINDOW_DAYS)
     rows = (await session.execute(
-        select(RiskEvent.mmsi, func.sum(RiskEvent.score))
+        select(RiskEvent.mmsi, RiskEvent.rule,
+               func.sum(RiskEvent.score), func.max(RiskEvent.score))
         .where(RiskEvent.ts >= since)
-        .group_by(RiskEvent.mmsi)
+        .group_by(RiskEvent.mmsi, RiskEvent.rule)
     )).all()
-    return {mmsi: float(score) for mmsi, score in rows}
+    # Cap each rule's contribution at RULE_SCORE_CAP_MULTIPLIER x its single-
+    # event score: repeated identical soft signals (16 loitering episodes) must
+    # not drown out serious single signals (a sanctions hit). max(score) rather
+    # than WEIGHTS handles historical events that stored different weights.
+    scores: dict[int, float] = defaultdict(float)
+    for mmsi, _rule, sum_score, max_score in rows:
+        scores[mmsi] += min(float(sum_score),
+                            RULE_SCORE_CAP_MULTIPLIER * float(max_score))
+    return dict(scores)
 
 
 RULE_EXPLANATIONS = {
