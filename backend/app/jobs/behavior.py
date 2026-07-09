@@ -1041,6 +1041,13 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
                 v.followed = False
                 logger.info("Auto-watchlist: demoted MMSI %s (score %.0f, rules %s)",
                             v.mmsi, sc, sorted(rules_by.get(v.mmsi, set())))
+            else:
+                # keep the explanation current too: new events (another list
+                # hit, a concrete identity change) must show up on ships that
+                # are already watched, not only on newly added ones
+                v.notes = await _auto_note(session, v.mmsi)
+                v.category = await _infer_category(session, v.mmsi,
+                                                   rules_by.get(v.mmsi, set()))
 
     candidates = sorted(
         ((m, sc) for m, sc in scores.items()
