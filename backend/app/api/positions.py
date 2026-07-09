@@ -169,6 +169,16 @@ async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
         # to the name we collected in the registry so the panel isn't just an MMSI
         d["ship_name"] = d.get("ship_name") or d.pop("registry_name", None)
         d.pop("registry_name", None)
+        # 5 decimals ~ 1 m; full float repr is 17 chars per coordinate and the
+        # payload ships 50k+ rows - precision nobody can see costs real MBs
+        # (same for microsecond timestamps: whole seconds are plenty)
+        d["ts"] = d["ts"].replace(microsecond=0)
+        d["lat"] = round(d["lat"], 5)
+        d["lon"] = round(d["lon"], 5)
+        if d.get("cog") is not None:
+            d["cog"] = round(d["cog"], 1)
+        if d.get("heading") is not None:
+            d["heading"] = round(d["heading"], 1)
         rows.append(d)
 
     # attach the specific detected patterns for watchlist ships, so an "other"
@@ -182,7 +192,13 @@ async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
             patterns.setdefault(mmsi, []).append(PATTERN_LABELS.get(rule, rule))
     for r in rows:
         r["patterns"] = patterns.get(r["mmsi"], [])
-    return _latest_adapter.dump_json([LatestPositionOut(**r) for r in rows])
+    # exclude_none: most of the 50k+ rows are ambient traffic where category /
+    # vessel_name / risk_score / notes etc. are null - dropping the null keys
+    # roughly halves the payload (the frontend treats undefined as null)
+    # exclude_defaults also drops patterns=[] on the ~50k ambient rows
+    return _latest_adapter.dump_json(
+        [LatestPositionOut(**r) for r in rows],
+        exclude_none=True, exclude_defaults=True)
 
 
 # In the web/worker split only the WORKER runs the ingester, so a web pod's
@@ -205,8 +221,19 @@ async def _build_world_from_db() -> list[dict]:
             .where(LatestPosition.ts >= since)
         )
         # serialize ONCE here (30k rows through FastAPI's encoder per request
-        # cost ~2s of CPU); cache the finished bytes like /latest does
-        rows = [{**r._mapping, "ts": r.ts.isoformat()} for r in result]
+        # cost ~2s of CPU); cache the finished bytes like /latest does. Trim
+        # nulls + coordinate precision (5 dp ~ 1 m) - it's a big payload.
+        rows = []
+        for r in result:
+            d = {"mmsi": r.mmsi, "ts": r.ts.isoformat(timespec="seconds"),
+                 "lat": round(r.lat, 5), "lon": round(r.lon, 5)}
+            if r.sog is not None:
+                d["sog"] = round(r.sog, 1)
+            if r.cog is not None:
+                d["cog"] = round(r.cog, 1)
+            if r.ship_name:
+                d["ship_name"] = r.ship_name
+            rows.append(d)
         return json.dumps(rows).encode()
 
 

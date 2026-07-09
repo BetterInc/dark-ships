@@ -762,13 +762,13 @@ export default function LiveMap() {
               <><dt>Risk score</dt><dd>{Math.round(selected.risk_score)}</dd></>
             )}
           </dl>
-          {selected.patterns.length > 0 && (
+          {(selected.patterns?.length ?? 0) > 0 && (
             <div style={{ marginTop: '0.7rem' }}>
               <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.35rem' }}>
-                Detected pattern{selected.patterns.length > 1 ? 's' : ''}
+                Detected pattern{(selected.patterns?.length ?? 0) > 1 ? 's' : ''}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                {selected.patterns.map((p) => (
+                {(selected.patterns ?? []).map((p) => (
                   <span key={p} className={`tag ${p.includes('list') || p.includes('ban') || p.includes('detention') ? 'shadow_fleet' : 'open'}`}>{p}</span>
                 ))}
               </div>
