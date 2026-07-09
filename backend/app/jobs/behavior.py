@@ -895,6 +895,24 @@ async def _auto_note(session, mmsi: int) -> str:
             # name change - only flag genuinely different names
             if listed and listed.upper() != (name or "").upper():
                 aliases.setdefault(listed.upper(), listed)
+        elif e.rule == "identity_change":
+            # name the actual change(s), not just the generic label: every
+            # identity_change event carries field/old/new in its details
+            changes: list[str] = []
+            for ev in events:
+                if ev.rule != "identity_change":
+                    continue
+                d = json.loads(ev.details or "{}")
+                if d.get("field"):
+                    changes.append(f"{d['field']} '{d.get('old') or '?'}' → '{d.get('new') or '?'}'")
+            changes = list(dict.fromkeys(changes))  # dedupe, keep order
+            if changes:
+                shown = ", ".join(changes[:4])
+                if len(changes) > 4:
+                    shown += f" (+{len(changes) - 4} more)"
+                reasons.append(f"changed its transmitted identity: {shown}")
+            else:
+                reasons.append(RULE_EXPLANATIONS["identity_change"])
         else:
             reasons.append(RULE_EXPLANATIONS.get(e.rule, e.rule))
     # behaviour-only ships (no external list) are heuristic - mark them as
