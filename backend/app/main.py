@@ -78,12 +78,16 @@ async def lifespan(app: FastAPI):
     start_ingest(tasks)
 
     scheduler = AsyncIOScheduler(timezone="UTC")
-    scheduler.add_job(run_gap_detection, "interval", minutes=5, next_run_time=None)
-    scheduler.add_job(run_behavior_scan, "interval", minutes=10, next_run_time=None)
-    scheduler.add_job(run_position_checks, "interval", hours=6, next_run_time=None)
+    # NOTE: no next_run_time=None here - in APScheduler that adds the job
+    # PAUSED (it never fires), not "first run after one interval". The
+    # _initial_* tasks below cover the immediate run; the interval default
+    # (first fire one interval after start) avoids doubling up.
+    scheduler.add_job(run_gap_detection, "interval", minutes=5)
+    scheduler.add_job(run_behavior_scan, "interval", minutes=10)
+    scheduler.add_job(run_position_checks, "interval", hours=6)
     scheduler.add_job(import_all, "cron", hour=4, minute=0)
     scheduler.add_job(sync_slicks, "cron", hour=5, minute=0)
-    scheduler.add_job(sync_gfw_events, "interval", hours=6, next_run_time=None)
+    scheduler.add_job(sync_gfw_events, "interval", hours=6)
     scheduler.add_job(prune_positions, "cron", hour=3, minute=30)
     # pre-create next month's partition a few days early
     scheduler.add_job(ensure_partitions, "cron", day=25, hour=2, minute=0)
@@ -114,6 +118,13 @@ async def _initial_behavior_run() -> None:
         await import_all()  # no-op if lists are < 20h old
     except Exception:
         logger.exception("Initial risk-list import failed")
+    # scan BEFORE the external syncs: a slow/hung Copernicus or GFW call must
+    # not starve the sanctions matcher (it once sat behind a hung GFW sync
+    # for the pod's whole life)
+    try:
+        await run_behavior_scan()
+    except Exception:
+        logger.exception("Initial behaviour scan failed")
     try:
         await sync_slicks()  # 90-day backfill on first run, 7-day refresh after
     except Exception:
@@ -122,10 +133,6 @@ async def _initial_behavior_run() -> None:
         await sync_gfw_events()  # GFW behavioural events into the engine
     except Exception:
         logger.exception("Initial GFW event sync failed")
-    try:
-        await run_behavior_scan()
-    except Exception:
-        logger.exception("Initial behaviour scan failed")
     try:
         await run_position_checks()
     except Exception:
