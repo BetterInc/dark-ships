@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     mail_host: str = "localhost"
     mail_port: int = 1025
     mail_from: str = "noreply@darkships.local"
+    # Prod: HTTPS relay next to Mailu (Scaleway blocks outbound SMTP from the
+    # cluster). When set, mail.py POSTs here instead of speaking SMTP.
+    mail_relay_url: str = ""
+    mail_relay_token: str = ""
 
     # Google login stays disabled until both creds are filled in.
     google_oauth_client_id: str = ""

@@ -1,11 +1,19 @@
-"""Minimal outbound mail via SMTP. In development this points at the Mailpit
+"""Minimal outbound mail. In development this speaks SMTP to the Mailpit
 service (MAIL_HOST=mailpit, MAIL_PORT=1025), which captures every message in a
-web UI at http://localhost:8025 instead of delivering it."""
+web UI at http://localhost:8025 instead of delivering it.
+
+In production SMTP is unusable: Scaleway drops outbound TCP to 25/465/587
+from the cluster nodes, so direct pod->Mailu never connects. When
+MAIL_RELAY_URL is set we instead POST to the HTTPS mail-relay co-located
+with Mailu (see prod-battle-infra modules/mail-server/relay), authenticated
+with the X-Relay-Token header.
+"""
 
 import logging
 from email.message import EmailMessage
 
 import aiosmtplib
+import httpx
 
 from .config import get_settings
 
@@ -14,17 +22,31 @@ logger = logging.getLogger(__name__)
 
 async def _send(to: str, subject: str, body: str) -> None:
     settings = get_settings()
-    message = EmailMessage()
-    message["From"] = settings.mail_from
-    message["To"] = to
-    message["Subject"] = subject
-    message.set_content(body)
     try:
-        await aiosmtplib.send(
-            message,
-            hostname=settings.mail_host,
-            port=settings.mail_port,
-        )
+        if settings.mail_relay_url:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"{settings.mail_relay_url}/send",
+                    json={
+                        "from": settings.mail_from,
+                        "to": to,
+                        "subject": subject,
+                        "text": body,
+                    },
+                    headers={"X-Relay-Token": settings.mail_relay_token},
+                )
+                resp.raise_for_status()
+        else:
+            message = EmailMessage()
+            message["From"] = settings.mail_from
+            message["To"] = to
+            message["Subject"] = subject
+            message.set_content(body)
+            await aiosmtplib.send(
+                message,
+                hostname=settings.mail_host,
+                port=settings.mail_port,
+            )
         logger.info("Sent mail to %s (%s)", to, subject)
     except Exception:
         logger.exception("Failed to send mail to %s", to)
