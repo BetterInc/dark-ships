@@ -3,7 +3,7 @@ import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { usePolling } from './api/client'
 import { useAuth } from './auth/AuthContext'
 import RequireAuth from './auth/RequireAuth'
-import type { Gap, Suggestion, Vessel } from './api/types'
+import type { Gap, Vessel } from './api/types'
 import Events from './pages/Events'
 import ForgotPassword from './pages/ForgotPassword'
 import Glossary from './pages/Glossary'
@@ -25,7 +25,9 @@ export default function App() {
   const [clock, setClock] = useState(utcClock())
   const { data: vessels } = usePolling<Vessel[]>('/vessels', 60_000)
   const { data: openGaps } = usePolling<Gap[]>('/gaps?status=open', 60_000)
-  const { data: suggestions } = usePolling<Suggestion[]>('/suggestions', 60_000)
+  // the header shows YOUR flags, not the engine's: the suggestion queue
+  // lives on the Suggestions page only (401s harmlessly while logged out)
+  const { data: myList } = usePolling<{ mmsi: number }[]>('/me/watchlist', 60_000)
 
   useEffect(() => {
     const t = setInterval(() => setClock(utcClock()), 1000)
@@ -34,7 +36,7 @@ export default function App() {
 
   const active = vessels?.filter((v) => v.active).length ?? '-'
   const gaps = openGaps?.length ?? '-'
-  const flagged = suggestions?.filter((s) => !s.on_watchlist).length ?? '-'
+  const following = myList?.length ?? 0
 
   return (
     <div className="app">
@@ -52,9 +54,11 @@ export default function App() {
         <div className={`instrument${typeof gaps === 'number' && gaps > 0 ? ' alert' : ''}`}>
           Open gaps<b>{gaps}</b>
         </div>
-        <div className={`instrument${typeof flagged === 'number' && flagged > 0 ? ' alert' : ''}`}>
-          Flagged<b>{flagged}</b>
-        </div>
+        {user && (
+          <div className="instrument">
+            Following<b>{following}</b>
+          </div>
+        )}
         <nav>
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
             Map
