@@ -27,6 +27,17 @@ GLOBAL_BBOX = [[[-90.0, -180.0], [90.0, 180.0]]]
 FLUSH_INTERVAL_SECONDS = 2.0
 SNAPSHOT_MAINTENANCE_SECONDS = 60
 
+# Class A transponders (large commercial vessels) send PositionReport;
+# Class B (fishing boats, yachts, small workboats) send the two ClassB
+# variants and StaticDataReport instead - without these, small ships are
+# invisible to the ingest.
+POSITION_MESSAGE_TYPES = (
+    "PositionReport",
+    "StandardClassBPositionReport",
+    "ExtendedClassBPositionReport",
+)
+SUBSCRIBED_MESSAGE_TYPES = [*POSITION_MESSAGE_TYPES, "ShipStaticData", "StaticDataReport"]
+
 # World-feed mode: live positions of every ship on the planet (terrestrially
 # received), kept in memory for the map's ambient layer. History goes to
 # Postgres for every ship (throttled per vessel).
@@ -180,9 +191,33 @@ class AisStreamConnection:
                     )
                 continue
 
-            if msg_type != "PositionReport":
+            if msg_type == "StaticDataReport":
+                # Class B static info arrives in two alternating parts:
+                # ReportA carries the name, ReportB callsign/type. No IMO,
+                # destination or draught on Class B.
+                sdr = (msg.get("Message") or {}).get("StaticDataReport") or {}
+                mmsi = meta.get("MMSI") or sdr.get("UserID")
+                if mmsi:
+                    part_a = sdr.get("ReportA") or {}
+                    part_b = sdr.get("ReportB") or {}
+                    await self.registry.observe_static(
+                        mmsi=mmsi,
+                        ts=_parse_time_utc(meta.get("time_utc", "")),
+                        name=(part_a.get("Name") or meta.get("ShipName") or "").strip() or None,
+                        imo=None,
+                        callsign=(part_b.get("CallSign") or "").strip() or None,
+                        ship_type=part_b.get("ShipType"),
+                        destination=None,
+                        draught=None,
+                    )
                 continue
-            report = (msg.get("Message") or {}).get("PositionReport") or {}
+
+            if msg_type not in POSITION_MESSAGE_TYPES:
+                continue
+            # Class B reports share the Class A field names for everything we
+            # store; fields a variant lacks (e.g. NavigationalStatus) just
+            # .get() to None.
+            report = (msg.get("Message") or {}).get(msg_type) or {}
             mmsi = meta.get("MMSI") or report.get("UserID")
             if not mmsi:
                 continue
@@ -253,7 +288,7 @@ class RegionsConnection(AisStreamConnection):
             return {
                 "APIKey": self.api_key,
                 "BoundingBoxes": GLOBAL_BBOX,
-                "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
+                "FilterMessageTypes": SUBSCRIBED_MESSAGE_TYPES,
             }
         if not self.region_bboxes:
             logger.info("[regions] no regions configured (AIS_REGIONS) - connection skipped")
@@ -261,7 +296,7 @@ class RegionsConnection(AisStreamConnection):
         return {
             "APIKey": self.api_key,
             "BoundingBoxes": self.region_bboxes,
-            "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
+            "FilterMessageTypes": SUBSCRIBED_MESSAGE_TYPES,
         }
 
 
