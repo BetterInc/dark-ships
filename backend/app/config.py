@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     # Behaviour engine / public Suggestions. The engine populates the shared
     # `vessels` table (auto_added) that powers the public Suggestions feed.
     auto_watchlist: bool = True
+    # Only VERIFIED facts auto-promote: a ship on an official sanctions/ban
+    # list is watchlisted automatically (and colored by category on the map);
+    # behaviour-only flags (loitering, gaps, identity changes) stay in
+    # Suggestions until a human reviews them. Same default everywhere -
+    # local dev and prod behave identically.
+    auto_watchlist_sanctions_only: bool = True
     # Legacy cap for the old global-watchlist "followed" flag on /api/vessels.
     # There is no dedicated provider connection anymore (one ingestion path),
     # so this only bounds that out-of-scope CRUD endpoint.

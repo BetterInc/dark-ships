@@ -1010,13 +1010,18 @@ HARD_RULES = {"identity_change", "mmsi_collision", "circle_spoofing",
               "impossible_jump", "identity_integrity", "draught_change"}
 
 
-def _qualifies_for_watchlist(rules: set[str], score: float, min_score: float) -> bool:
+def _qualifies_for_watchlist(rules: set[str], score: float, min_score: float,
+                             sanctions_only: bool = False) -> bool:
     if score < min_score:
         return False
     # a genuine sanctions / IUU-list match (NOT a detention - those are the
     # substandard-ship corroboration bucket)
     has_sanction_list = any(
         r.startswith("risklist_") and r not in MOU_DETENTION_RULES for r in rules)
+    if sanctions_only:
+        # only verified facts auto-promote; behaviour flags stay suggestions
+        # for a human to judge
+        return has_sanction_list
     # a hard-to-fake behavioural signal
     has_hard_signal = bool(rules & HARD_RULES)
     return has_sanction_list or has_hard_signal
@@ -1052,7 +1057,8 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
             v.risk_score = scores[v.mmsi]
         if v.active and v.auto_added and not v.pinned:
             sc = scores.get(v.mmsi, 0)
-            if not _qualifies_for_watchlist(rules_by.get(v.mmsi, set()), sc, s.suggestion_min_score):
+            if not _qualifies_for_watchlist(rules_by.get(v.mmsi, set()), sc, s.suggestion_min_score,
+                                            s.auto_watchlist_sanctions_only):
                 v.active = False
                 v.followed = False
                 logger.info("Auto-watchlist: demoted MMSI %s (score %.0f, rules %s)",
@@ -1067,7 +1073,8 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
 
     candidates = sorted(
         ((m, sc) for m, sc in scores.items()
-         if _qualifies_for_watchlist(rules_by.get(m, set()), sc, s.suggestion_min_score)
+         if _qualifies_for_watchlist(rules_by.get(m, set()), sc, s.suggestion_min_score,
+                                     s.auto_watchlist_sanctions_only)
          and not (by_mmsi.get(m) and by_mmsi[m].active)),
         key=lambda x: -x[1],
     )

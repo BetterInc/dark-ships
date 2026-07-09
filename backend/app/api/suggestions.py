@@ -49,14 +49,25 @@ async def list_suggestions(session: AsyncSession = Depends(get_session)):
     # leads for a viewer, so they are excluded here.
     tracked = exists(select(Position.id).where(
         Position.mmsi == RiskEvent.mmsi, Position.ts >= since))
-    scores = (await session.execute(
-        select(RiskEvent.mmsi, func.sum(RiskEvent.score))
+    # same capped scoring as the behaviour engine (compute_scores): a rule
+    # contributes at most 3x its single-event score, so 16 loitering episodes
+    # don't outrank a detained ship
+    from ..jobs.behavior import RULE_SCORE_CAP_MULTIPLIER
+    per_rule = (await session.execute(
+        select(RiskEvent.mmsi, RiskEvent.rule,
+               func.sum(RiskEvent.score), func.max(RiskEvent.score))
         .where(RiskEvent.ts >= since, tracked)
-        .group_by(RiskEvent.mmsi)
-        .having(func.sum(RiskEvent.score) >= settings.suggestion_min_score / 2)
-        .order_by(func.sum(RiskEvent.score).desc())
-        .limit(100)
+        .group_by(RiskEvent.mmsi, RiskEvent.rule)
     )).all()
+    totals: dict[int, float] = {}
+    for mmsi, _rule, sum_score, max_score in per_rule:
+        totals[mmsi] = totals.get(mmsi, 0.0) + min(
+            float(sum_score), RULE_SCORE_CAP_MULTIPLIER * float(max_score))
+    scores = sorted(
+        ((m, sc) for m, sc in totals.items()
+         if sc >= settings.suggestion_min_score / 2),
+        key=lambda x: -x[1],
+    )[:100]
     if not scores:
         return []
 

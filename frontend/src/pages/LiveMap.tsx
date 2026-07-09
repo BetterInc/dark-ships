@@ -256,6 +256,12 @@ export default function LiveMap() {
   // mobile: the legend / anchorage panels collapse behind toggle chips
   const [showLegend, setShowLegend] = useState(false)
   const [showClusters, setShowClusters] = useState(false)
+  // unverified suspects are opt-in, remembered per browser
+  const [showSuspects, setShowSuspects] = useState(
+    () => localStorage.getItem('ds-show-suspects') === '1')
+  useEffect(() => {
+    localStorage.setItem('ds-show-suspects', showSuspects ? '1' : '0')
+  }, [showSuspects])
   const { followed, addFollowed } = useFollowed()
   // default to the auto-watchlist threshold (50); remember the user's choice
   const [minRisk, setMinRisk] = useState(() => {
@@ -656,8 +662,11 @@ export default function LiveMap() {
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || !suggestions) return
-    ;(map.getSource('flagged') as GeoJSONSource)?.setData(flaggedToGeoJSON(suggestions))
-  }, [mapReady, suggestions])
+    // suspects are opt-in: unverified behaviour flags stay off the map until
+    // the viewer flips the toggle (they're always in Suggestions)
+    ;(map.getSource('flagged') as GeoJSONSource)?.setData(
+      flaggedToGeoJSON(showSuspects ? suggestions : []))
+  }, [mapReady, suggestions, showSuspects])
 
   useEffect(() => {
     const map = mapRef.current
@@ -914,6 +923,11 @@ export default function LiveMap() {
         <span className="risk-count">
           {positions ? positions.filter((p) => p.category && (p.risk_score ?? 0) >= minRisk).length : 0} watchlist ships shown
         </span>
+        <label className="suspect-toggle" title="Unverified behaviour flags - review them in Suggestions">
+          <input type="checkbox" checked={showSuspects}
+                 onChange={(e) => setShowSuspects(e.target.checked)} />
+          suspects
+        </label>
       </div>
 
       {/* on phones the two bottom panels start collapsed behind these chips
