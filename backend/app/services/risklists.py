@@ -485,11 +485,21 @@ async def import_eu_iuu() -> int:
 
 
 async def import_all(force: bool = False) -> dict[str, int]:
-    """Run all importers. Without force, skip if data is under a day old."""
+    """Run all importers. Without force, skip if data is under a day old.
+
+    Freshness is judged per source, not on the single newest row: a run
+    killed mid-import (pod roll) would otherwise leave one fresh source
+    making the whole partial dataset look up to date for 20h.
+    """
+    expected = {"ofac", *OS_VESSEL_DATASETS, "eu", "uk", "uani", "iuu", "eu_iuu"}
     async with SessionLocal() as session:
-        newest = await session.scalar(select(func.max(RiskListEntry.imported_at)))
-    if newest and not force:
-        age_hours = (datetime.now(timezone.utc) - newest).total_seconds() / 3600
+        per_source = dict((await session.execute(
+            select(RiskListEntry.source, func.max(RiskListEntry.imported_at))
+            .group_by(RiskListEntry.source)
+        )).all())
+    if per_source.keys() >= expected and not force:
+        oldest = min(per_source[s] for s in expected)
+        age_hours = (datetime.now(timezone.utc) - oldest).total_seconds() / 3600
         if age_hours < 20:
             logger.info("Risk lists are %.1fh old - skipping import", age_hours)
             return {}
