@@ -169,14 +169,51 @@ async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
     return _latest_adapter.dump_json([LatestPositionOut(**r) for r in rows])
 
 
+# In the web/worker split only the WORKER runs the ingester, so a web pod's
+# in-memory world_snapshot is permanently empty. Fall back to the same picture
+# from the DB (latest position per ship, last 30 min), cached like /latest so
+# pollers don't stampede the DISTINCT-ON query.
+_WORLD_TTL = 30.0
+_world_cache: tuple[float, list[dict]] | None = None
+_world_lock = asyncio.Lock()
+
+
+async def _build_world_from_db() -> list[dict]:
+    since = datetime.now(timezone.utc) - timedelta(minutes=30)
+    latest = (
+        select(Position)
+        .where(Position.ts >= since)
+        .distinct(Position.mmsi)
+        .order_by(Position.mmsi, Position.ts.desc())
+        .subquery()
+    )
+    from ..db import SessionLocal
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(latest.c.mmsi, latest.c.ts, latest.c.lat, latest.c.lon,
+                   latest.c.sog, latest.c.cog, latest.c.ship_name)
+        )
+        return [dict(r._mapping) for r in result]
+
+
 @router.get("/positions/world")
 async def world_positions(response: Response):
-    """Live in-memory snapshot of every terrestrially received ship worldwide
-    (world-feed mode). Not persisted - the map's ambient layer."""
+    """Live snapshot of every terrestrially received ship worldwide - the
+    map's ambient layer. Served from the ingester's memory when this process
+    runs it (worker / dev), from the DB otherwise (web pods)."""
     from ..ingest.aisstream import get_world_snapshot
     # identical for all viewers - let a CDN fan it out (polled every 120s client-side)
     response.headers["Cache-Control"] = "public, max-age=30"
-    return get_world_snapshot()
+    snapshot = get_world_snapshot()
+    if snapshot:
+        return snapshot
+    global _world_cache
+    async with _world_lock:
+        if _world_cache and time.monotonic() - _world_cache[0] < _WORLD_TTL:
+            return _world_cache[1]
+        rows = await _build_world_from_db()
+        _world_cache = (time.monotonic(), rows)
+        return rows
 
 
 @router.get("/regions", response_model=list[RegionOut])
