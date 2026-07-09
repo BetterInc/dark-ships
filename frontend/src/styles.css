@@ -723,3 +723,61 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
 .gloss-faq-item { border-left: 2px solid var(--line); padding-left: 0.8rem; }
 .gloss-q { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 0.25rem; }
 .gloss-a { font-size: 12.5px; line-height: 1.6; color: var(--muted); }
+
+/* ── Mobile ───────────────────────────────────────────────────────────────
+   The desktop layout assumes ~900px of width (single-row statusbar, fixed-
+   width map overlays). Below that: the statusbar wraps and the nav becomes a
+   swipeable strip, map overlays shrink to the viewport, list pages tighten. */
+@media (max-width: 920px) {
+  .statusbar {
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    padding: 0.5rem 0.8rem;
+  }
+  /* the tab strip takes its own full row and scrolls sideways instead of
+     forcing the whole page wider than the phone */
+  .statusbar nav {
+    flex: 1 0 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .statusbar nav::-webkit-scrollbar { display: none; }
+  .statusbar nav a { padding: 0.3rem 0.6rem; white-space: nowrap; }
+  .nav-email { display: none; } /* the Logout button is enough on a phone */
+
+  /* map overlays: viewport-bound instead of fixed desktop widths */
+  .ship-search { width: calc(100vw - 2rem); }
+  .risk-slider {
+    top: 3.6rem; /* below the search box instead of colliding with it */
+    left: 1rem; right: 1rem;
+    transform: none;
+    width: auto; min-width: 0;
+    flex-wrap: wrap; gap: 0.4rem 0.8rem;
+    padding: 0.45rem 0.7rem;
+  }
+  .vessel-panel { width: calc(100vw - 2rem); max-height: 55%; }
+  .legend {
+    max-width: calc(100vw - 2rem);
+    max-height: 30vh;      /* scrolls instead of covering the whole map */
+    overflow-y: auto;
+    bottom: 1rem;
+    font-size: 11px;
+    padding: 0.5rem 0.7rem;
+  }
+
+  /* list/detail pages */
+  .page, .page.wide { padding: 1rem 0.8rem; }
+  .datagrid { grid-template-columns: auto 1fr; }
+  /* wide tables scroll inside themselves instead of widening the page */
+  .page table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+@media (max-width: 560px) {
+  /* the anchorage panel and the bottom-left legend can't share a phone
+     screen; the anchorages remain reachable through the map markers */
+  .cluster-panel { display: none; }
+  .statusbar { font-size: 11px; gap: 0.4rem 0.8rem; }
+  .statusbar .brand { flex: 1 0 100%; }
+}
