@@ -156,6 +156,8 @@ export default function Suggestions() {
 
           <Pagination page={page} pageCount={pageCount} total={all.length} pageSize={PAGE_SIZE} onPage={setPage} />
 
+          <div className="table-scroll">
+
           <table className="data-table sug-table">
             <thead>
               <tr>
@@ -223,6 +225,7 @@ export default function Suggestions() {
               })}
             </tbody>
           </table>
+</div>
 
           <Pagination page={page} pageCount={pageCount} total={all.length} pageSize={PAGE_SIZE} onPage={setPage} />
 

@@ -130,6 +130,7 @@ export default function Events() {
       )}
 
       {hasEvents && filtered.length > 0 && (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -161,6 +162,7 @@ export default function Events() {
             })}
           </tbody>
         </table>
+</div>
       )}
 
       {hasEvents && filtered.length > 0 && (

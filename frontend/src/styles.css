@@ -734,16 +734,14 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
     gap: 0.5rem 1rem;
     padding: 0.5rem 0.8rem;
   }
-  /* the tab strip takes its own full row and scrolls sideways instead of
-     forcing the whole page wider than the phone */
+  /* the tab strip takes its own full row(s); wrapping keeps every item
+     visible and tappable (a swipe strip reads as broken on phones) */
   .statusbar nav {
     flex: 1 0 100%;
     margin-left: 0;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
+    flex-wrap: wrap;
+    row-gap: 0.15rem;
   }
-  .statusbar nav::-webkit-scrollbar { display: none; }
   .statusbar nav a { padding: 0.3rem 0.6rem; white-space: nowrap; }
   .nav-email { display: none; } /* the Logout button is enough on a phone */
 
@@ -770,14 +768,47 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
   /* list/detail pages */
   .page, .page.wide { padding: 1rem 0.8rem; }
   .datagrid { grid-template-columns: auto 1fr; }
-  /* wide tables scroll inside themselves instead of widening the page */
-  .page table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* real columns need room: give the table its natural width inside the
+     scroll wrapper instead of crushing every column to fit the phone */
+  .table-scroll table { min-width: 640px; }
+  /* imagery cards: thumbnail above the metadata instead of beside it */
+  .imagery-row { flex-wrap: wrap; }
+  .imagery-meta { min-width: 0; }
 }
 
 @media (max-width: 560px) {
-  /* the anchorage panel and the bottom-left legend can't share a phone
-     screen; the anchorages remain reachable through the map markers */
-  .cluster-panel { display: none; }
   .statusbar { font-size: 11px; gap: 0.4rem 0.8rem; }
   .statusbar .brand { flex: 1 0 100%; }
+}
+
+/* ── Map bottom panels: chips on mobile, always-open on desktop ─────────── */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.imagery-row { display: flex; gap: 1rem; align-items: flex-start; }
+.imagery-meta { flex: 1; }
+.imagery-meta .mono { overflow-wrap: anywhere; }
+
+.panel-toggles { display: none; }
+@media (max-width: 920px) {
+  .panel-toggles {
+    display: flex; gap: 0.5rem;
+    position: absolute; bottom: 1rem; left: 1rem; z-index: 2;
+  }
+  .panel-toggle {
+    background: rgba(16, 29, 43, 0.94); border: 1px solid var(--line);
+    color: var(--muted); border-radius: 999px; padding: 0.35rem 0.9rem;
+    font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.08em; cursor: pointer; backdrop-filter: blur(4px);
+  }
+  .panel-toggle.on { color: var(--text); border-color: var(--watch-other); }
+  /* panels start hidden behind the chips and open above them */
+  .legend, .cluster-panel { display: none; }
+  .legend.open {
+    display: grid;
+    bottom: 3.4rem;
+  }
+  .cluster-panel.open {
+    display: block;
+    left: 1rem; right: 1rem; width: auto;
+    bottom: 3.4rem; max-height: 40vh;
+  }
 }

@@ -205,6 +205,7 @@ export default function Watchlist() {
           )}
         </div>
         <Pagination page={page} pageCount={pageCount} total={count} pageSize={PAGE_SIZE} onPage={setPage} />
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -291,6 +292,7 @@ export default function Watchlist() {
             ))}
           </tbody>
         </table>
+</div>
         <Pagination page={page} pageCount={pageCount} total={count} pageSize={PAGE_SIZE} onPage={setPage} />
         </>
       )}

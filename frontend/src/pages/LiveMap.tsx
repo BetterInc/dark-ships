@@ -253,6 +253,9 @@ export default function LiveMap() {
   const [selectedCluster, setSelectedCluster] = useState<Cluster | null>(null)
   const [selectedAmbient, setSelectedAmbient] = useState<AmbientInfo | null>(null)
   const [posChecks, setPosChecks] = useState<PositionCheck[]>([])
+  // mobile: the legend / anchorage panels collapse behind toggle chips
+  const [showLegend, setShowLegend] = useState(false)
+  const [showClusters, setShowClusters] = useState(false)
   const { followed, addFollowed } = useFollowed()
   // default to the auto-watchlist threshold (50); remember the user's choice
   const [minRisk, setMinRisk] = useState(() => {
@@ -913,8 +916,24 @@ export default function LiveMap() {
         </span>
       </div>
 
+      {/* on phones the two bottom panels start collapsed behind these chips
+          (they'd otherwise cover the whole map); desktop hides the chips and
+          shows the panels as always */}
+      <div className="panel-toggles">
+        <button className={`panel-toggle${showLegend ? ' on' : ''}`}
+                onClick={() => { setShowLegend((v) => !v); setShowClusters(false) }}>
+          Legend
+        </button>
+        {clusters && clusters.length > 0 && (
+          <button className={`panel-toggle${showClusters ? ' on' : ''}`}
+                  onClick={() => { setShowClusters((v) => !v); setShowLegend(false) }}>
+            Anchorages
+          </button>
+        )}
+      </div>
+
       {clusters && clusters.length > 0 && (
-        <div className="cluster-panel">
+        <div className={`cluster-panel${showClusters ? ' open' : ''}`}>
           <div className="legend-head" style={{ marginTop: 0 }}>Shadow-fleet anchorages</div>
           {clusters.slice(0, 5).map((c, i) => (
             <button key={i} className="cluster-row" onClick={() => mapRef.current?.flyTo({ center: [c.lon, c.lat], zoom: 10 })}>
@@ -925,7 +944,7 @@ export default function LiveMap() {
         </div>
       )}
 
-      <div className="legend">
+      <div className={`legend${showLegend ? ' open' : ''}`}>
         <div className="legend-head">On a sanctions or ban list</div>
         <div><span className="swatch" style={{ background: COLORS.shadow_fleet }} />Sanctioned oil tanker</div>
         <div><span className="swatch" style={{ background: COLORS.smuggling }} />Sanctioned cargo / contraband</div>

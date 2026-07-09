@@ -70,6 +70,8 @@ export default function Sources() {
         themselves designations.
       </p>
 
+      <div className="table-scroll">
+
       <table>
         <thead>
           <tr>
@@ -101,6 +103,7 @@ export default function Sources() {
           })}
         </tbody>
       </table>
+</div>
 
       <p className="sub" style={{ marginTop: '1.5rem', fontSize: 13 }}>
         &quot;Complete&quot; means we ingest the source&apos;s entire current list. Where a

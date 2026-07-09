@@ -67,9 +67,9 @@ export default function Imagery() {
 
       {items?.map((item, i) => (
         <article key={i} className="gap-card">
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
+          <div className="imagery-row">
             <Thumb item={item} />
-            <div>
+            <div className="imagery-meta">
               <header style={{ display: 'flex', gap: '0.7rem', alignItems: 'baseline', flexWrap: 'wrap' }}>
                 <h3>{item.vessel_name ?? `MMSI ${item.mmsi}`}</h3>
                 <span className={`tag ${item.source === 'sentinel-1' ? 'other' : 'shadow_fleet'}`}>{item.source}</span>
