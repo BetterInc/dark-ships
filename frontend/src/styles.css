@@ -105,6 +105,7 @@ main { flex: 1; min-height: 0; position: relative; }
 .vessel-panel {
   position: absolute;
   top: 1rem; right: 1rem;
+  z-index: 4; /* above the Legend/Anchorages chips: the mobile bottom sheet must cover them */
   width: 320px;
   max-height: calc(100% - 2rem);
   overflow-y: auto;
@@ -841,7 +842,8 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
 
 @media (max-width: 560px) {
   .statusbar { font-size: 11px; gap: 0.4rem 0.8rem; }
-  .statusbar .brand { flex: 1 0 100%; }
+  /* instruments are hidden here, so brand + burger share one row; forcing the
+     brand to 100% width used to push the burger onto a wasted second row */
 }
 
 /* ── Map bottom panels: chips on mobile, always-open on desktop ─────────── */

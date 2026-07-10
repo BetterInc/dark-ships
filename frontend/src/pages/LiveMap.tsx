@@ -503,8 +503,12 @@ export default function LiveMap() {
 
       // hover tooltip with the ship name (no glyph font needed - it's an HTML
       // popup, not map text). Only for named vessel/flagged layers.
+      // Hover-capable pointers only: touch browsers emulate mousemove on tap
+      // but never fire mouseleave, which left the tooltip stuck to the map.
+      // Tapping already opens the info panel, so phones lose nothing.
+      const canHover = window.matchMedia('(hover: hover)').matches
       const hover = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 })
-      for (const layer of ['vessels-dots', 'vessels-arrows', 'flagged-rings']) {
+      if (canHover) for (const layer of ['vessels-dots', 'vessels-arrows', 'flagged-rings']) {
         map.on('mousemove', layer, (e) => {
           map.getCanvas().style.cursor = 'pointer'
           const f = e.features?.[0]
@@ -525,7 +529,7 @@ export default function LiveMap() {
         })
       }
       // ambient ships: lightweight name tooltip so they can be identified too
-      for (const layer of ['world-dots', 'world-arrows']) {
+      if (canHover) for (const layer of ['world-dots', 'world-arrows']) {
         map.on('mousemove', layer, (e) => {
           map.getCanvas().style.cursor = 'pointer'
           const f = e.features?.[0]

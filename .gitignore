@@ -18,6 +18,7 @@ node_modules/
 frontend/dist/
 dist/
 .vite/
+*.tsbuildinfo
 
 # logs / os / editor
 *.log
