@@ -1,9 +1,12 @@
+import asyncio
+import gzip
 import io
 import json
+import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,10 +39,64 @@ class SuggestionOut(BaseModel):
     events: list[RiskEventOut]
 
 
+# The suggestions feed runs a heavy RiskEvent aggregation (~1s, worse cold) but
+# its inputs only change when the behaviour engine scans - every 10 minutes. So
+# cache the built JSON for a short window (stale-while-revalidate, like
+# /positions): concurrent 60s pollers trigger one rebuild per window, nobody
+# waits on it, and the data is never more than a window behind the 10-min engine.
+_SUG_TTL = 30.0
+_sug_cache: tuple[float, bytes, bytes] | None = None  # (ts, raw, gz)
+_sug_lock = asyncio.Lock()
+_sug_adapter = TypeAdapter(list[SuggestionOut])
+_SUG_HEADERS = {"Cache-Control": "public, max-age=30", "Vary": "Accept-Encoding"}
+
+
+def _sug_response(request: Request, raw: bytes, gz: bytes) -> Response:
+    if "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(gz, media_type="application/json",
+                        headers={**_SUG_HEADERS, "Content-Encoding": "gzip"})
+    return Response(raw, media_type="application/json", headers=_SUG_HEADERS)
+
+
+async def _rebuild_suggestions() -> tuple[bytes, bytes]:
+    from ..db import SessionLocal
+    global _sug_cache
+    async with SessionLocal() as session:
+        raw = await _build_suggestions(session)
+    gz = gzip.compress(raw, compresslevel=6)
+    _sug_cache = (time.monotonic(), raw, gz)
+    return raw, gz
+
+
+async def _refresh_suggestions_bg() -> None:
+    async with _sug_lock:
+        if _sug_cache and time.monotonic() - _sug_cache[0] < _SUG_TTL:
+            return  # someone else already refreshed
+        try:
+            await _rebuild_suggestions()
+        except Exception:
+            pass  # keep serving the stale copy; next request retries
+
+
 @router.get("/suggestions", response_model=list[SuggestionOut])
-async def list_suggestions(session: AsyncSession = Depends(get_session)):
-    """Vessels flagged by the behaviour engine, highest risk first.
-    Shows everything at >= half the auto-add threshold so you see what's brewing."""
+async def list_suggestions(request: Request):
+    """Vessels flagged by the behaviour engine, highest risk first. Served from a
+    short shared cache (stale-while-revalidate) so pollers don't each re-run the
+    aggregation; refreshed in the background, so no visitor waits on the rebuild."""
+    cached = _sug_cache
+    if cached:
+        if time.monotonic() - cached[0] >= _SUG_TTL and not _sug_lock.locked():
+            asyncio.get_running_loop().create_task(_refresh_suggestions_bg())
+        return _sug_response(request, cached[1], cached[2])
+    async with _sug_lock:
+        if _sug_cache:  # built while we waited on the lock
+            return _sug_response(request, _sug_cache[1], _sug_cache[2])
+        raw, gz = await _rebuild_suggestions()
+        return _sug_response(request, raw, gz)
+
+
+async def _build_suggestions(session: AsyncSession) -> bytes:
+    """Run the aggregation and serialise the feed to JSON bytes."""
     settings = get_settings()
     since = datetime.now(timezone.utc) - timedelta(days=SCORE_WINDOW_DAYS)
 
@@ -70,7 +127,7 @@ async def list_suggestions(session: AsyncSession = Depends(get_session)):
         key=lambda x: -x[1],
     )[:100]
     if not scores:
-        return []
+        return b"[]"
 
     mmsis = [m for m, _ in scores]
     registry = {
@@ -123,7 +180,7 @@ async def list_suggestions(session: AsyncSession = Depends(get_session)):
                                  details=json.loads(e.details or "{}"))
                     for e in events_by_mmsi.get(mmsi, [])[:10]],
         ))
-    return out
+    return _sug_adapter.dump_json(out)
 
 
 @router.post("/suggestions/{mmsi}/add", status_code=201,
