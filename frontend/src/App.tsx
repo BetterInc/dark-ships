@@ -23,6 +23,7 @@ function utcClock(): string {
 export default function App() {
   const { user, logout } = useAuth()
   const [clock, setClock] = useState(utcClock())
+  const [menuOpen, setMenuOpen] = useState(false)
   const { data: vessels } = usePolling<Vessel[]>('/vessels', 60_000)
   const { data: openGaps } = usePolling<Gap[]>('/gaps?status=open', 60_000)
   // the header shows YOUR flags, not the engine's: the suggestion queue
@@ -59,7 +60,15 @@ export default function App() {
             Following<b>{following}</b>
           </div>
         )}
-        <nav>
+        <button
+          className="nav-burger"
+          aria-label="Menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          ☰
+        </button>
+        <nav className={menuOpen ? 'open' : ''} onClick={() => setMenuOpen(false)}>
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
             Map
           </NavLink>

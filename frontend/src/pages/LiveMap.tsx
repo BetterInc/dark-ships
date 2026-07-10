@@ -763,7 +763,7 @@ export default function LiveMap() {
             )}
           </dl>
           {(selected.patterns?.length ?? 0) > 0 && (
-            <div style={{ marginTop: '0.7rem' }}>
+            <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
               <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.35rem' }}>
                 Detected pattern{(selected.patterns?.length ?? 0) > 1 ? 's' : ''}
               </div>
@@ -775,7 +775,7 @@ export default function LiveMap() {
             </div>
           )}
           {selected.notes && (
-            <div style={{ marginTop: '0.7rem' }}>
+            <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
               <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.3rem' }}>
                 Why it&apos;s watched
               </div>
@@ -783,7 +783,7 @@ export default function LiveMap() {
             </div>
           )}
           {posChecks.length > 0 && (
-            <div style={{ marginTop: '0.9rem', borderTop: '1px dashed var(--line)', paddingTop: '0.6rem' }}>
+            <div className="panel-detail" style={{ marginTop: '0.9rem', borderTop: '1px dashed var(--line)', paddingTop: '0.6rem' }}>
               <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.4rem' }}>
                 Satellite cross-checks - claimed position captured
               </div>
@@ -817,7 +817,7 @@ export default function LiveMap() {
               <><dt>Last seen</dt><dd>{new Date(selectedFlag.last_seen).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC</dd></>
             )}
           </dl>
-          <div style={{ marginTop: '0.8rem' }}>
+          <div className="panel-detail" style={{ marginTop: '0.8rem' }}>
             <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.4rem' }}>
               Why it&apos;s flagged
             </div>
