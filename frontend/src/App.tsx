@@ -12,6 +12,7 @@ import BlogPost from './pages/BlogPost'
 import Imagery from './pages/Imagery'
 import LiveMap from './pages/LiveMap'
 import Login from './pages/Login'
+import Monitor from './pages/Monitor'
 import Register from './pages/Register'
 import ResetPassword from './pages/ResetPassword'
 import Sources from './pages/Sources'
@@ -78,14 +79,8 @@ export default function App() {
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
             Map
           </NavLink>
-          <NavLink to="/watchlist" className={({ isActive }) => (isActive ? 'active' : '')}>
-            Watchlist
-          </NavLink>
-          <NavLink to="/suggestions" className={({ isActive }) => (isActive ? 'active' : '')}>
-            Suggestions
-          </NavLink>
-          <NavLink to="/events" className={({ isActive }) => (isActive ? 'active' : '')}>
-            Events
+          <NavLink to="/monitor" className={({ isActive }) => (isActive ? 'active' : '')}>
+            Monitor
           </NavLink>
           <NavLink to="/imagery" className={({ isActive }) => (isActive ? 'active' : '')}>
             Imagery
@@ -120,6 +115,8 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={<LiveMap />} />
+          <Route path="/monitor" element={<RequireAuth><Monitor /></RequireAuth>} />
+          {/* standalone routes kept so existing in-app links keep working */}
           <Route
             path="/watchlist"
             element={<RequireAuth><Watchlist /></RequireAuth>}

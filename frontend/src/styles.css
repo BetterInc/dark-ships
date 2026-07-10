@@ -633,6 +633,10 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
   border-left: 3px solid var(--line); color: var(--muted);
 }
 
+/* Monitor: tab bar strip above the embedded page (aligns with .page centering) */
+.monitor-tabbar { padding-top: 1.25rem; padding-bottom: 0; }
+.monitor-tabbar .tabs { margin: 0; }
+
 /* tab switcher (Admin) */
 .tabs {
   display: flex;
