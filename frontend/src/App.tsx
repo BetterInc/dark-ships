@@ -115,6 +115,8 @@ export default function App() {
       <main>
         <Routes>
           <Route path="/" element={<LiveMap />} />
+          {/* shareable deep link to a vessel; same map, focused on the ship */}
+          <Route path="/ship/:mmsi" element={<LiveMap />} />
           <Route path="/monitor" element={<RequireAuth><Monitor /></RequireAuth>} />
           {/* standalone routes kept so existing in-app links keep working */}
           <Route

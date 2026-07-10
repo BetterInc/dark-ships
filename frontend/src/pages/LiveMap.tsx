@@ -1,6 +1,6 @@
 import maplibregl, { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, usePolling } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
@@ -76,7 +76,7 @@ function FollowButton({
 function ShareButton({ mmsi }: { mmsi: number }) {
   const [copied, setCopied] = useState(false)
   async function share() {
-    const url = `${window.location.origin}/?ship=${mmsi}`
+    const url = `${window.location.origin}/ship/${mmsi}`
     try {
       if (navigator.share) {
         await navigator.share({ title: `Vessel ${mmsi} · Dark Ships`, url })
@@ -277,10 +277,13 @@ export default function LiveMap() {
   const [selectedFlag, setSelectedFlag] = useState<Suggestion | null>(null)
   const [selectedCluster, setSelectedCluster] = useState<Cluster | null>(null)
   const [selectedAmbient, setSelectedAmbient] = useState<AmbientInfo | null>(null)
-  const [searchParams, setSearchParams] = useSearchParams()
-  const deepLinked = useRef(false)  // only auto-focus the ?ship= link once
-  // capture the incoming ?ship= once, before the URL-sync effect can clear it
-  const initialShip = useRef(searchParams.get('ship'))
+  const { mmsi: shipParam } = useParams()          // /ship/:mmsi (canonical)
+  const [searchParams] = useSearchParams()         // ?ship= (legacy, still honoured)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const deepLinked = useRef(false)  // only auto-focus the shared link once
+  // capture the incoming ship once, before the URL-sync effect can change it
+  const initialShip = useRef(shipParam ?? searchParams.get('ship'))
   const [posChecks, setPosChecks] = useState<PositionCheck[]>([])
   // mobile: the legend / anchorage panels collapse behind toggle chips
   const [showLegend, setShowLegend] = useState(false)
@@ -375,22 +378,14 @@ export default function LiveMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady])
 
-  // Keep ?ship=<mmsi> in the address bar in sync with the open panel, so the URL
-  // itself is copy-pasteable and link previews can resolve the vessel.
+  // Keep the address bar at /ship/<mmsi> for the open panel, so the URL itself
+  // is the clean shareable link and previews can resolve the vessel.
   useEffect(() => {
     // don't touch the URL until a pending deep link has been consumed
     if (initialShip.current && !deepLinked.current) return
     const mmsi = selected?.mmsi ?? selectedAmbient?.mmsi ?? selectedFlag?.mmsi
-    const current = searchParams.get('ship')
-    if (mmsi != null && String(mmsi) !== current) {
-      const next = new URLSearchParams(searchParams)
-      next.set('ship', String(mmsi))
-      setSearchParams(next, { replace: true })
-    } else if (mmsi == null && current) {
-      const next = new URLSearchParams(searchParams)
-      next.delete('ship')
-      setSearchParams(next, { replace: true })
-    }
+    const target = mmsi != null ? `/ship/${mmsi}` : '/'
+    if (location.pathname !== target) navigate(target, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, selectedAmbient, selectedFlag])
 
