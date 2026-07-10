@@ -1,0 +1,12 @@
+{
+  "name": "Dark Ships",
+  "short_name": "Dark Ships",
+  "description": "Live map of the world's high-risk and shadow-fleet vessels, built from free AIS and open satellite data.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any" }
+  ]
+}

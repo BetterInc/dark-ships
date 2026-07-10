@@ -7,7 +7,8 @@ import type { Gap, Vessel } from './api/types'
 import Admin from './pages/Admin'
 import Events from './pages/Events'
 import ForgotPassword from './pages/ForgotPassword'
-import Glossary from './pages/Glossary'
+import Blog from './pages/Blog'
+import BlogPost from './pages/BlogPost'
 import Imagery from './pages/Imagery'
 import LiveMap from './pages/LiveMap'
 import Login from './pages/Login'
@@ -92,8 +93,8 @@ export default function App() {
           <NavLink to="/sources" className={({ isActive }) => (isActive ? 'active' : '')}>
             Sources
           </NavLink>
-          <NavLink to="/glossary" className={({ isActive }) => (isActive ? 'active' : '')}>
-            Glossary
+          <NavLink to="/blog" className={({ isActive }) => (isActive ? 'active' : '')}>
+            Blog
           </NavLink>
           {user?.is_superuser && (
             <NavLink to="/admin" className={({ isActive }) => (isActive ? 'active' : '')}>
@@ -128,7 +129,8 @@ export default function App() {
           <Route path="/imagery" element={<RequireAuth><Imagery /></RequireAuth>} />
           <Route path="/admin" element={<RequireAuth admin><Admin /></RequireAuth>} />
           <Route path="/sources" element={<Sources />} />
-          <Route path="/glossary" element={<Glossary />} />
+          <Route path="/blog" element={<Blog />} />
+          <Route path="/blog/:slug" element={<BlogPost />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />

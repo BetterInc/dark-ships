@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Dark Ships">
+  <rect width="32" height="32" rx="6" fill="#0b1220"/>
+  <!-- hull -->
+  <path d="M6 20h20l-3 5H9z" fill="#e11d48"/>
+  <!-- deck / mast -->
+  <rect x="15" y="8" width="2" height="11" fill="#e2e8f0"/>
+  <path d="M17 9h6l-6 5z" fill="#e2e8f0"/>
+  <!-- signal ping -->
+  <circle cx="16" cy="7" r="2" fill="#38bdf8"/>
+</svg>

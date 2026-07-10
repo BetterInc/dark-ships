@@ -3,7 +3,84 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dark Ships</title>
+
+    <!-- Primary meta -->
+    <title>Dark Ships - Tracking the shadow fleet from free AIS &amp; satellite data</title>
+    <meta
+      name="description"
+      content="Dark Ships is a live map of the world's high-risk vessels - shadow-fleet tankers, sanctions-evading, narco-trafficking and illegal (IUU) fishing ships - detected from free AIS and open satellite imagery. Follow dark, spoofing and sanctioned vessels in real time."
+    />
+    <meta
+      name="keywords"
+      content="dark ships, shadow fleet, AIS spoofing, sanctions evasion, ghost fleet, dark vessels, IUU fishing, narco vessels, ship tracking, maritime OSINT, AIS tracking, satellite ship detection"
+    />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="author" content="Dark Ships" />
+    <link rel="canonical" href="https://darkships.org/" />
+
+    <!-- Theme / browser chrome -->
+    <meta name="theme-color" content="#0b1220" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Dark Ships" />
+    <meta property="og:title" content="Dark Ships - Tracking the shadow fleet from free AIS &amp; satellite data" />
+    <meta
+      property="og:description"
+      content="A live map of the world's high-risk vessels - shadow-fleet tankers, sanctions-evading, narco and illegal-fishing ships - detected from free AIS and open satellite imagery."
+    />
+    <meta property="og:url" content="https://darkships.org/" />
+    <meta property="og:image" content="https://darkships.org/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Dark Ships - live map of the world's high-risk and shadow-fleet vessels" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter / X card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Dark Ships - Tracking the shadow fleet from free AIS &amp; satellite data" />
+    <meta
+      name="twitter:description"
+      content="A live map of the world's high-risk vessels - shadow-fleet tankers, sanctions-evading, narco and illegal-fishing ships - detected from free AIS and open satellite imagery."
+    />
+    <meta name="twitter:image" content="https://darkships.org/og-image.png" />
+    <meta name="twitter:image:alt" content="Dark Ships - live map of the world's high-risk and shadow-fleet vessels" />
+
+    <!-- Structured data: Organization + WebSite (with sitelinks search box) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://darkships.org/#organization",
+            "name": "Dark Ships",
+            "url": "https://darkships.org/",
+            "logo": "https://darkships.org/og-image.png",
+            "description": "Dark Ships detects and tracks the world's high-risk vessels - shadow-fleet tankers, sanctions-evading, narco-trafficking and illegal (IUU) fishing ships - using free AIS and open satellite imagery."
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://darkships.org/#website",
+            "url": "https://darkships.org/",
+            "name": "Dark Ships",
+            "description": "Live map of the world's high-risk and shadow-fleet vessels, built from free AIS and open satellite data.",
+            "publisher": { "@id": "https://darkships.org/#organization" },
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://darkships.org/?ship={search_term_string}"
+              },
+              "query-input": "required name=search_term_string"
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

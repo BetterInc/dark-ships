@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dark Ships sitemap.
+
+  Public, indexable routes only. Auth/account routes (/login, /register,
+  /admin, /reset-password, /verify, /forgot-password) are excluded here and
+  disallowed in robots.txt.
+
+  Blog post URLs are listed below. When adding a post under
+  src/content/blog/<slug>.md, add its /blog/<slug> entry here too.
+  Shared-ship URLs (/?ship=<mmsi>) are effectively unbounded and intentionally
+  not listed.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://darkships.org/</loc>
+    <changefreq>hourly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://darkships.org/blog</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://darkships.org/sources</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://darkships.org/blog/vessel-flags-and-ais-signals</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://darkships.org/blog/who-tracks-shadow-fleets</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://darkships.org/blog/how-to-investigate-a-suspicious-vessel</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://darkships.org/blog/reaching-the-osint-maritime-community</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+</urlset>

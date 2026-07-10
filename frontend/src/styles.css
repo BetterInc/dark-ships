@@ -598,6 +598,41 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
   padding: 0.15rem 0.55rem; border-radius: 3px; font-weight: 700;
 }
 
+/* blog (list + post) */
+.blog-index { display: grid; gap: 1rem; margin-top: 1.2rem; }
+.blog-card {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1rem 1.1rem;
+  background: var(--panel);
+}
+.blog-card h2 { margin: 0 0 0.3rem; font-size: 1.15rem; }
+.blog-card h2 a { color: var(--text); text-decoration: none; }
+.blog-card h2 a:hover { color: var(--watch-other); }
+.blog-meta { color: var(--muted); font-size: 11.5px; margin-bottom: 0.5rem; }
+.blog-card p { margin: 0 0 0.6rem; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+.blog-more { color: var(--watch-other); text-decoration: none; font-size: 13px; }
+.blog-back { margin: 0 0 0.8rem; }
+.blog-back a { color: var(--muted); text-decoration: none; font-size: 13px; }
+.blog-post article { max-width: 760px; }
+.blog-post h1 { margin-bottom: 0.35rem; }
+.blog-body { margin-top: 1.4rem; color: var(--text); line-height: 1.7; font-size: 15px; }
+.blog-body h2 { margin: 1.8rem 0 0.6rem; font-size: 1.3rem; }
+.blog-body h3 { margin: 1.4rem 0 0.4rem; font-size: 1.08rem; color: var(--text); }
+.blog-body p { margin: 0 0 1rem; }
+.blog-body ul, .blog-body ol { margin: 0 0 1rem; padding-left: 1.3rem; }
+.blog-body li { margin-bottom: 0.35rem; }
+.blog-body a { color: var(--watch-other); }
+.blog-body strong { color: var(--text); }
+.blog-body code {
+  font-family: var(--mono); font-size: 0.9em;
+  background: var(--panel); padding: 0.1rem 0.35rem; border-radius: 3px;
+}
+.blog-body blockquote {
+  margin: 0 0 1rem; padding: 0.3rem 0 0.3rem 1rem;
+  border-left: 3px solid var(--line); color: var(--muted);
+}
+
 /* tab switcher (Admin) */
 .tabs {
   display: flex;
@@ -792,31 +827,6 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
 .evt-row.low td:first-child { box-shadow: inset 3px 0 0 var(--line); }
 .evt-row .evt-dot { display: inline-block; vertical-align: middle; margin-right: 0.45rem; }
 .evt-details { color: var(--muted); font-size: 12px; max-width: 28ch; }
-
-/* ── Glossary / FAQ page ─────────────────────────────────── */
-.glossary .gloss-group { margin-top: 1.8rem; }
-.glossary .gloss-group h2 { font-size: 15px; margin: 0 0 0.3rem; }
-.gloss-intro { color: var(--muted); font-size: 13px; line-height: 1.55; max-width: 70ch; margin: 0 0 0.9rem; }
-.gloss-grid {
-  display: grid; gap: 0.7rem;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-}
-.gloss-card {
-  background: var(--panel); border: 1px solid var(--line);
-  border-left: 3px solid var(--watch-other);
-  border-radius: 6px; padding: 0.7rem 0.85rem;
-}
-.gloss-name { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 0.25rem; }
-.gloss-what { font-size: 12.5px; line-height: 1.5; color: var(--text); }
-.gloss-why { font-size: 12px; line-height: 1.5; color: var(--muted); margin-top: 0.4rem; }
-.gloss-why span {
-  display: inline-block; text-transform: uppercase; letter-spacing: 0.08em;
-  font-size: 9.5px; color: var(--watch-other); margin-right: 0.35rem;
-}
-.gloss-faq { display: grid; gap: 0.9rem; max-width: 78ch; }
-.gloss-faq-item { border-left: 2px solid var(--line); padding-left: 0.8rem; }
-.gloss-q { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 0.25rem; }
-.gloss-a { font-size: 12.5px; line-height: 1.6; color: var(--muted); }
 
 /* ── Mobile ───────────────────────────────────────────────────────────────
    The desktop layout assumes ~900px of width (single-row statusbar, fixed-

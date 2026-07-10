@@ -1,6 +1,6 @@
 import maplibregl, { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, usePolling } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
@@ -68,6 +68,31 @@ function FollowButton({
       </button>
       {note && <span className="error" style={{ margin: 0 }}>{note}</span>}
     </div>
+  )
+}
+
+// Copy (or native-share) a public deep link to this vessel. The link opens the
+// map focused on the ship, viewable by anyone - no login required.
+function ShareButton({ mmsi }: { mmsi: number }) {
+  const [copied, setCopied] = useState(false)
+  async function share() {
+    const url = `${window.location.origin}/?ship=${mmsi}`
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Vessel ${mmsi} · Dark Ships`, url })
+      } else {
+        await navigator.clipboard.writeText(url)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    } catch {
+      /* user dismissed the share sheet, or clipboard was blocked - no-op */
+    }
+  }
+  return (
+    <button className="ghost share-btn" onClick={share} style={{ marginTop: '0.5rem' }}>
+      {copied ? 'Link copied' : 'Share ship'}
+    </button>
   )
 }
 
@@ -252,6 +277,10 @@ export default function LiveMap() {
   const [selectedFlag, setSelectedFlag] = useState<Suggestion | null>(null)
   const [selectedCluster, setSelectedCluster] = useState<Cluster | null>(null)
   const [selectedAmbient, setSelectedAmbient] = useState<AmbientInfo | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const deepLinked = useRef(false)  // only auto-focus the ?ship= link once
+  // capture the incoming ?ship= once, before the URL-sync effect can clear it
+  const initialShip = useRef(searchParams.get('ship'))
   const [posChecks, setPosChecks] = useState<PositionCheck[]>([])
   // mobile: the legend / anchorage panels collapse behind toggle chips
   const [showLegend, setShowLegend] = useState(false)
@@ -306,12 +335,64 @@ export default function LiveMap() {
       .catch(() => {})
   }
 
+  // Focus a ship by MMSI - drives the shareable ?ship= deep link. Uses the
+  // public search endpoint, so it resolves the ship's position even before the
+  // position feeds have finished loading on first paint.
+  const selectByMmsi = async (mmsi: number) => {
+    const pos = positions?.find((p) => p.mmsi === mmsi)
+    if (pos) {
+      mapRef.current?.flyTo({ center: [pos.lon, pos.lat], zoom: 11, essential: true })
+      setSelectedFlag(null); setSelectedCluster(null); setSelectedAmbient(null); setSelected(pos)
+      return
+    }
+    try {
+      const hits = await api<SearchHit[]>(`/vessels/search?q=${mmsi}`)
+      const hit = hits.find((h) => h.mmsi === mmsi) ?? hits[0]
+      if (hit) openHit(hit)
+    } catch {
+      /* unknown / malformed mmsi - leave the map as-is */
+    }
+  }
+
   const { data: positions } = usePolling<LatestPosition[]>('/positions/latest', 30_000)
   const { data: openGaps } = usePolling<Gap[]>('/gaps?status=open', 60_000)
   const { data: regions } = usePolling<Region[]>('/regions', 300_000)
   const { data: world } = usePolling<WorldPosition[]>('/positions/world', 120_000)
   const { data: suggestions } = usePolling<Suggestion[]>('/suggestions', 60_000)
   const { data: clusters } = usePolling<Cluster[]>('/clusters', 60_000)
+
+  // Shareable deep link: on first load, focus the ship named in ?ship=<mmsi>.
+  // Reads the value captured at mount, so the URL-sync effect below can't race
+  // it away before the map is ready.
+  useEffect(() => {
+    if (!mapReady || deepLinked.current) return
+    const raw = initialShip.current
+    if (!raw) return
+    const mmsi = Number(raw)
+    if (!Number.isFinite(mmsi) || mmsi <= 0) return
+    deepLinked.current = true
+    selectByMmsi(mmsi)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady])
+
+  // Keep ?ship=<mmsi> in the address bar in sync with the open panel, so the URL
+  // itself is copy-pasteable and link previews can resolve the vessel.
+  useEffect(() => {
+    // don't touch the URL until a pending deep link has been consumed
+    if (initialShip.current && !deepLinked.current) return
+    const mmsi = selected?.mmsi ?? selectedAmbient?.mmsi ?? selectedFlag?.mmsi
+    const current = searchParams.get('ship')
+    if (mmsi != null && String(mmsi) !== current) {
+      const next = new URLSearchParams(searchParams)
+      next.set('ship', String(mmsi))
+      setSearchParams(next, { replace: true })
+    } else if (mmsi == null && current) {
+      const next = new URLSearchParams(searchParams)
+      next.delete('ship')
+      setSearchParams(next, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, selectedAmbient, selectedFlag])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -813,6 +894,7 @@ export default function LiveMap() {
             </div>
           )}
           <FollowButton mmsi={selected.mmsi} followed={followed} onAdded={addFollowed} />
+          <ShareButton mmsi={selected.mmsi} />
         </aside>
       )}
 
@@ -852,9 +934,10 @@ export default function LiveMap() {
           </div>
           <p style={{ marginTop: '0.8rem', fontSize: 12.5, display: 'flex', gap: '0.9rem', flexWrap: 'wrap' }}>
             <a href="/suggestions" style={{ color: 'var(--watch-other)' }}>Review in Suggestions →</a>
-            <a href="/glossary" style={{ color: 'var(--muted)' }}>What do these mean?</a>
+            <a href="/blog" style={{ color: 'var(--muted)' }}>What do these mean?</a>
           </p>
           <FollowButton mmsi={selectedFlag.mmsi} followed={followed} onAdded={addFollowed} />
+          <ShareButton mmsi={selectedFlag.mmsi} />
         </aside>
       )}
 
@@ -880,6 +963,7 @@ export default function LiveMap() {
             </p>
           )}
           <FollowButton mmsi={selectedAmbient.mmsi} followed={followed} onAdded={addFollowed} />
+          <ShareButton mmsi={selectedAmbient.mmsi} />
         </aside>
       )}
 
@@ -914,7 +998,7 @@ export default function LiveMap() {
       )}
 
       <div className="ship-search">
-        <input type="text" placeholder="Search ship name, MMSI or IMO…"
+        <input type="text" placeholder="Search ship name, MMSI or IMO..."
           value={query} onChange={(e) => setQuery(e.target.value)} />
         {results.length > 0 && (
           <div className="search-results">
@@ -969,7 +1053,7 @@ export default function LiveMap() {
           {clusters.slice(0, 5).map((c, i) => (
             <button key={i} className="cluster-row" onClick={() => mapRef.current?.flyTo({ center: [c.lon, c.lat], zoom: 10 })}>
               <b>{c.count} shadow-fleet ships</b>{c.sanctioned > 0 ? ` · ${c.sanctioned} sanctioned` : ''} anchored together at {c.lat.toFixed(2)}, {c.lon.toFixed(2)}
-              <span className="mono">{c.members.slice(0, 4).map((m) => m.name).filter(Boolean).join(', ')}{c.count > 4 ? '…' : ''} - click to zoom</span>
+              <span className="mono">{c.members.slice(0, 4).map((m) => m.name).filter(Boolean).join(', ')}{c.count > 4 ? '...' : ''} - click to zoom</span>
             </button>
           ))}
         </div>

@@ -1,0 +1,15 @@
+# Dark Ships - https://darkships.org
+# Public OSINT map of high-risk / shadow-fleet vessels. Crawling welcome.
+
+User-agent: *
+Allow: /
+
+# Auth and account flows carry no indexable content.
+Disallow: /login
+Disallow: /register
+Disallow: /admin
+Disallow: /reset-password
+Disallow: /verify
+Disallow: /forgot-password
+
+Sitemap: https://darkships.org/sitemap.xml
