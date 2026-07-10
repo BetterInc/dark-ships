@@ -88,7 +88,7 @@ def valid_imo(imo: str) -> bool:
 
 class RegistryTracker:
     def __init__(self):
-        # mmsi -> {"name":…, "imo":…, "callsign":…, "last_seen_write": dt, "known": bool}
+        # mmsi -> {"name":..., "imo":..., "callsign":..., "last_seen_write": dt, "known": bool}
         self._cache: dict[int, dict] = {}
         self._upserts: dict[int, dict] = {}
         self._changes: list[dict] = []

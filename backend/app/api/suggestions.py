@@ -302,7 +302,7 @@ class CsvImport(BaseModel):
 @router.post("/risklists/import-csv", dependencies=[Depends(current_superuser)])
 async def import_csv(payload: CsvImport, session: AsyncSession = Depends(get_session)):
     """Import a curated vessel list (KSE tanker tracker, UANI shadow-fleet
-    tracker, C4ADS report annexes, …) - paste as CSV with an 'imo' column.
+    tracker, C4ADS report annexes, ...) - paste as CSV with an 'imo' column.
     Replaces previous entries of the same source; matches run within 10 min."""
     import csv as csv_mod
     import io

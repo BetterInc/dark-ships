@@ -98,7 +98,7 @@ async def main() -> None:
             print(f"ADD  {name} ({category}) - last position {GAP_AGE_HOURS}h ago")
         await session.commit()
 
-    print("Running gap detection + Sentinel matching (queries the live Copernicus catalogue)…")
+    print("Running gap detection + Sentinel matching (queries the live Copernicus catalogue)...")
     await run_gap_detection()
     print("Done - check the map and the events feed.")
 

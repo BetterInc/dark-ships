@@ -122,7 +122,7 @@ LOITER_MIN_HOURS = 4.0      # sustained dwell
 LOITER_MAX_RADIUS_KM = 8.0  # holding position, not steaming through
 LOITER_MIN_INTERIOR_KM = 25.0  # well offshore, away from ports at the box edge
 LOITER_COOLDOWN_HOURS = 24
-RISKLIST_DEFAULT_WEIGHT = 80.0  # custom imported lists (KSE, UANI, C4ADS, …)
+RISKLIST_DEFAULT_WEIGHT = 80.0  # custom imported lists (KSE, UANI, C4ADS, ...)
 RISKLIST_WEIGHTS = {            # per-source overrides for the default above
     "risklist_ofac": 100.0,
     "risklist_parismou": 70.0,   # refused EU port access - strong, not a full sanction

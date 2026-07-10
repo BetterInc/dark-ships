@@ -15,7 +15,7 @@ OpenTofu in the **`prod-battle-infra`** repo.
   `darkships.org`.
 
 The backend is two Deployments from one image: `web` (`RUN_MODE=web`, scales)
-and `worker` (`RUN_MODE=worker`, **1 replica, Recreate** — the AIS ingester +
+and `worker` (`RUN_MODE=worker`, **1 replica, Recreate** - the AIS ingester +
 scheduler + migrations).
 
 ## One-time setup
@@ -25,7 +25,7 @@ In **`prod-battle-infra`**:
    `aws --endpoint-url https://s3.eu-central-2.wasabisys.com s3 mb s3://dark-ships-cold`
 2. Add the GH secret `TF_VAR_darkships_zone_id` = Cloudflare zone ID for
    `darkships.org` (same CF token, it already covers both zones).
-3. `tofu -chdir=envs/prod apply` — creates the namespace, Deployments, Ingress,
+3. `tofu -chdir=envs/prod apply` - creates the namespace, Deployments, Ingress,
    and the `api.darkships.org` A record.
 
 In the cluster (kubectl, secrets never in git or TF):
