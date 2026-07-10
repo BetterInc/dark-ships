@@ -362,7 +362,10 @@ async def position_history(
     mmsi: int,
     start: datetime | None = None,
     end: datetime | None = None,
-    days: float = Query(365, le=3650),
+    # public + unauthenticated: bound the window so a single request can't fan
+    # a year+ of cold-tier (S3/R2) reads. Deep historical pulls belong behind
+    # an authenticated/admin tool, not this open endpoint.
+    days: float = Query(365, le=365),
 ):
     """Full track for one vessel, spanning the hot (Postgres) and cold (Parquet
     on S3/R2) tiers transparently. Defaults to the last `days` days."""
@@ -383,6 +386,6 @@ async def cold_status():
 
     settings = get_settings()
     if not settings.cold_storage_enabled:
-        return {"enabled": False, "bucket": None, "months": []}
-    return {"enabled": True, "bucket": settings.s3_bucket,
-            "months": await cold.archived_months()}
+        return {"enabled": False, "months": []}
+    # deliberately omit the bucket name - no need to disclose storage internals
+    return {"enabled": True, "months": await cold.archived_months()}

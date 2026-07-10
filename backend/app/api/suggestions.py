@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth import current_superuser
 from ..config import get_settings
 from ..db import get_session
 from ..jobs.behavior import SCORE_WINDOW_DAYS
@@ -125,7 +126,8 @@ async def list_suggestions(session: AsyncSession = Depends(get_session)):
     return out
 
 
-@router.post("/suggestions/{mmsi}/add", status_code=201)
+@router.post("/suggestions/{mmsi}/add", status_code=201,
+             dependencies=[Depends(current_superuser)])
 async def accept_suggestion(mmsi: int, session: AsyncSession = Depends(get_session)):
     """Manually accept a suggestion - added as pinned (never auto-evicted)."""
     existing = await session.scalar(select(Vessel).where(Vessel.mmsi == mmsi))
@@ -227,7 +229,7 @@ async def risklists_status(session: AsyncSession = Depends(get_session)):
             "global_fleet_estimate": GLOBAL_FLEET_ESTIMATE}
 
 
-@router.post("/risklists/refresh")
+@router.post("/risklists/refresh", dependencies=[Depends(current_superuser)])
 async def risklists_refresh():
     results = await import_all(force=True)
     if not results:
@@ -240,7 +242,7 @@ class CsvImport(BaseModel):
     csv: str     # header row with at least "imo"; optional: name, flag, program
 
 
-@router.post("/risklists/import-csv")
+@router.post("/risklists/import-csv", dependencies=[Depends(current_superuser)])
 async def import_csv(payload: CsvImport, session: AsyncSession = Depends(get_session)):
     """Import a curated vessel list (KSE tanker tracker, UANI shadow-fleet
     tracker, C4ADS report annexes, …) - paste as CSV with an 'imo' column.

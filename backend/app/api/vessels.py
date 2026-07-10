@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth import current_superuser
 from ..config import get_settings
 from ..db import get_session
 from ..models import Position, PositionCheck, Vessel, VesselRegistry
@@ -90,7 +91,8 @@ async def list_vessels(session: AsyncSession = Depends(get_session)):
     return result.scalars().all()
 
 
-@router.post("", response_model=VesselOut, status_code=201)
+@router.post("", response_model=VesselOut, status_code=201,
+             dependencies=[Depends(current_superuser)])
 async def create_vessel(payload: VesselCreate, session: AsyncSession = Depends(get_session)):
     exists = await session.scalar(select(Vessel).where(Vessel.mmsi == payload.mmsi))
     if exists:
@@ -102,7 +104,8 @@ async def create_vessel(payload: VesselCreate, session: AsyncSession = Depends(g
     return vessel
 
 
-@router.patch("/{mmsi}", response_model=VesselOut)
+@router.patch("/{mmsi}", response_model=VesselOut,
+              dependencies=[Depends(current_superuser)])
 async def update_vessel(mmsi: int, payload: VesselUpdate, session: AsyncSession = Depends(get_session)):
     vessel = await session.scalar(select(Vessel).where(Vessel.mmsi == mmsi))
     if not vessel:
@@ -125,7 +128,8 @@ async def update_vessel(mmsi: int, payload: VesselUpdate, session: AsyncSession 
     return vessel
 
 
-@router.delete("/{mmsi}", status_code=204)
+@router.delete("/{mmsi}", status_code=204,
+               dependencies=[Depends(current_superuser)])
 async def delete_vessel(mmsi: int, session: AsyncSession = Depends(get_session)):
     vessel = await session.scalar(select(Vessel).where(Vessel.mmsi == mmsi))
     if not vessel:

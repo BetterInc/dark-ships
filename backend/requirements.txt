@@ -12,3 +12,7 @@ httpx-oauth>=0.14
 aiosmtplib>=3.0
 duckdb>=1.1
 pytz>=2024.1
+# rate limiting primitive (same lib slowapi/flask-limiter build on). Memory
+# backend by default; point RATELIMIT_STORAGE_URI at Redis/Valkey to share the
+# counters across web replicas. Add limits[async-redis] when doing so.
+limits>=3.13

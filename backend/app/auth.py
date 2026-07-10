@@ -15,6 +15,7 @@ from typing import Optional
 
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin, schemas
+from fastapi_users.exceptions import InvalidPasswordException
 from fastapi_users.authentication import (
     AuthenticationBackend,
     BearerTransport,
@@ -57,8 +58,19 @@ async def get_user_db(
 
 
 class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
-    reset_password_token_secret = SECRET
-    verification_token_secret = SECRET
+    # distinct per-purpose secrets so a leaked/guessed token of one kind can't
+    # be replayed as another (all still derived from the one configured secret)
+    reset_password_token_secret = SECRET + ":reset"
+    verification_token_secret = SECRET + ":verify"
+
+    async def validate_password(self, password: str, user) -> None:
+        # fastapi-users ships a no-op validator; enforce a real minimum policy.
+        # Applies to both self-registration and admin-created accounts.
+        if len(password) < 8:
+            raise InvalidPasswordException("Password must be at least 8 characters")
+        email = getattr(user, "email", "") or ""
+        if email and email.lower() in password.lower():
+            raise InvalidPasswordException("Password must not contain your email address")
 
     async def on_after_register(
         self, user: User, request: Optional[Request] = None

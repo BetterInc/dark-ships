@@ -95,6 +95,16 @@ class Settings(BaseSettings):
         return bool(self.s3_endpoint and self.s3_bucket
                     and self.s3_access_key_id and self.s3_secret_access_key)
 
+    # Deployment environment. When "production", startup refuses to run with the
+    # insecure default auth_secret (see main.py) so a forgotten AUTH_SECRET can
+    # never ship a forgeable-JWT deploy.
+    environment: str = "dev"  # dev | production
+
+    # Rate-limit counter store. "async+memory://" is per-pod (fine locally / one
+    # replica). Point at the cluster cache to share limits across web replicas,
+    # e.g. "async+redis://valkey.dark-ships:6379". (needs limits[async-redis].)
+    ratelimit_storage_uri: str = "async+memory://"
+
     # Auth / accounts (FastAPI-Users). auth_secret signs the JWTs and the
     # password-reset / verification tokens - override via AUTH_SECRET in prod.
     auth_secret: str = "dev-insecure-change-me"
