@@ -262,6 +262,13 @@ export default function LiveMap() {
   useEffect(() => {
     localStorage.setItem('ds-show-suspects', showSuspects ? '1' : '0')
   }, [showSuspects])
+  // gap rings ("went dark here") are opt-in too - dozens of open gaps
+  // otherwise clutter the map by default
+  const [showGaps, setShowGaps] = useState(
+    () => localStorage.getItem('ds-show-gaps') === '1')
+  useEffect(() => {
+    localStorage.setItem('ds-show-gaps', showGaps ? '1' : '0')
+  }, [showGaps])
   const { followed, addFollowed } = useFollowed()
   // default to the auto-watchlist threshold (50); remember the user's choice
   const [minRisk, setMinRisk] = useState(() => {
@@ -659,9 +666,10 @@ export default function LiveMap() {
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapReady || !openGaps) return
-    ;(map.getSource('gaps') as GeoJSONSource)?.setData(gapsToGeoJSON(openGaps))
-  }, [mapReady, openGaps])
+    if (!map || !mapReady) return
+    ;(map.getSource('gaps') as GeoJSONSource)?.setData(
+      gapsToGeoJSON(showGaps && openGaps ? openGaps : []))
+  }, [mapReady, openGaps, showGaps])
 
   useEffect(() => {
     const map = mapRef.current
@@ -931,6 +939,11 @@ export default function LiveMap() {
           <input type="checkbox" checked={showSuspects}
                  onChange={(e) => setShowSuspects(e.target.checked)} />
           suspects
+        </label>
+        <label className="suspect-toggle" title="Red rings where a watched ship went dark (open AIS gaps)">
+          <input type="checkbox" checked={showGaps}
+                 onChange={(e) => setShowGaps(e.target.checked)} />
+          gaps
         </label>
       </div>
 

@@ -639,8 +639,13 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
   .statusbar nav.open .nav-sep { width: auto; height: 1px; margin: 0.3rem 0; }
   .statusbar nav.open .nav-account { justify-content: space-between; }
 
-  /* map: keep search, drop the risk/suspect controls */
-  .risk-slider { display: none; }
+  /* risk/suspect/gap controls stay usable on phones, just tighter:
+     a slim wrapped pill directly under the search bar */
+  .risk-slider {
+    padding: 0.35rem 0.6rem;
+    gap: 0.25rem 0.7rem;
+  }
+  .risk-slider input[type=range] { min-width: 110px; }
 
   /* search full-width; 16px stops iOS zoom-on-focus */
   .ship-search { left: 0.6rem; right: 0.6rem; width: auto; }
