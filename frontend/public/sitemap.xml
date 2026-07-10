@@ -28,6 +28,11 @@
     <priority>0.7</priority>
   </url>
   <url>
+    <loc>https://darkships.org/blog/how-the-risk-score-works</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
     <loc>https://darkships.org/blog/vessel-flags-and-ais-signals</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
