@@ -598,6 +598,31 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
   padding: 0.15rem 0.55rem; border-radius: 3px; font-weight: 700;
 }
 
+/* tab switcher (Admin) */
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--line);
+  margin: 0.75rem 0 1rem;
+}
+.tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+}
+.tabs button:hover { color: var(--text); }
+.tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--watch-other);
+}
+
 /* hamburger - hidden on desktop */
 .nav-burger {
   display: none;

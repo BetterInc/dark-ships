@@ -37,7 +37,7 @@ SECRET = get_settings().auth_secret
 # ---- schemas -------------------------------------------------------------
 
 class UserRead(schemas.BaseUser[int]):
-    pass
+    role: str = "user"  # user | partner | admin
 
 
 class UserCreate(schemas.BaseUserCreate):
@@ -64,11 +64,11 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         self, user: User, request: Optional[Request] = None
     ) -> None:
         logger.info("User %s registered", user.id)
-        # bootstrap: emails listed in ADMIN_EMAILS become superusers on signup
+        # bootstrap: emails listed in ADMIN_EMAILS become admins on signup
         if user.email.lower() in get_settings().admin_email_set:
             user = await self.user_db.update(
-                user, {"is_superuser": True, "is_verified": True})
-            logger.info("User %s promoted to superuser via ADMIN_EMAILS", user.id)
+                user, {"is_superuser": True, "role": "admin", "is_verified": True})
+            logger.info("User %s promoted to admin via ADMIN_EMAILS", user.id)
         if user.is_verified:
             return
         # fire off a verification email (best effort - never block register)

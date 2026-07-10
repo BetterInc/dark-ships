@@ -5,6 +5,7 @@ import { api, apiForm, getToken, setToken } from '../api/client'
 export interface User {
   id: string
   email: string
+  role: 'user' | 'partner' | 'admin'
   is_active: boolean
   is_superuser: boolean
   is_verified: boolean
@@ -19,6 +20,8 @@ interface AuthValue {
   logout: () => void
   forgotPassword: (email: string) => Promise<void>
   resetPassword: (token: string, password: string) => Promise<void>
+  verifyEmail: (token: string) => Promise<void>
+  resendVerification: (email: string) => Promise<void>
   googleAuthUrl: () => Promise<string>
 }
 
@@ -72,8 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     })
-    // fastapi-users register does not return a token; log in straight after
-    await login(email, password)
+    // no auto-login: the account must verify its email address first
+    // (login requires is_verified; the register page points at the inbox)
   }
 
   function logout() {
@@ -96,6 +99,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  async function verifyEmail(verifyToken: string) {
+    await api('/auth/verify', {
+      method: 'POST',
+      body: JSON.stringify({ token: verifyToken }),
+    })
+  }
+
+  async function resendVerification(email: string) {
+    // always 202, whether or not the address exists (no account enumeration)
+    await api('/auth/request-verify-token', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+  }
+
   async function googleAuthUrl() {
     const res = await api<{ authorization_url: string }>('/auth/google/authorize')
     return res.authorization_url
@@ -103,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, login, register, logout, forgotPassword, resetPassword, googleAuthUrl }}
+      value={{ user, token, loading, login, register, logout, forgotPassword, resetPassword, verifyEmail, resendVerification, googleAuthUrl }}
     >
       {children}
     </AuthContext.Provider>

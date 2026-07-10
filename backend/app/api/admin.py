@@ -8,6 +8,8 @@ effect immediately: fastapi-users re-loads the user from the DB on every
 request, so a suspended user's next call 401s regardless of JWT lifetime.
 """
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi_users import exceptions
 from pydantic import BaseModel, EmailStr
@@ -24,9 +26,13 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 # ---- response shapes -----------------------------------------------------
 
+Role = Literal["user", "partner", "admin"]
+
+
 class AdminUserOut(BaseModel):
     id: int
     email: str
+    role: str
     is_active: bool
     is_superuser: bool
     is_verified: bool
@@ -36,17 +42,19 @@ class AdminUserOut(BaseModel):
 class AdminUserCreate(BaseModel):
     email: EmailStr
     password: str
+    role: Role = "user"
 
 
 class AdminUserPatch(BaseModel):
     is_active: bool | None = None
-    is_superuser: bool | None = None
+    role: Role | None = None
 
 
 def _user_out(user: User, watchlist_count: int) -> AdminUserOut:
     return AdminUserOut(
         id=user.id,
         email=user.email,
+        role=user.role,
         is_active=user.is_active,
         is_superuser=user.is_superuser,
         is_verified=user.is_verified,
@@ -100,6 +108,9 @@ async def create_user(
         raise HTTPException(409, f"A user with email {payload.email} already exists")
     except exceptions.InvalidPasswordException as e:
         raise HTTPException(400, str(e.reason))
+    if payload.role != "user":
+        user = await user_manager.user_db.update(
+            user, {"role": payload.role, "is_superuser": payload.role == "admin"})
     return _user_out(user, 0)
 
 
@@ -115,17 +126,38 @@ async def update_user(
         raise HTTPException(404, f"No user with id {user_id}")
 
     fields = payload.model_dump(exclude_unset=True)
-    if user.id == admin.id and (
-        fields.get("is_active") is False or fields.get("is_superuser") is False
-    ):
+    demotes_self = fields.get("role") is not None and fields["role"] != "admin"
+    if user.id == admin.id and (fields.get("is_active") is False or demotes_self):
         raise HTTPException(400, "You cannot suspend or de-admin your own account")
 
-    for key, value in fields.items():
-        if value is not None:
-            setattr(user, key, value)
+    if fields.get("is_active") is not None:
+        user.is_active = fields["is_active"]
+    if fields.get("role") is not None:
+        user.role = fields["role"]
+        user.is_superuser = fields["role"] == "admin"
     await session.commit()
     await session.refresh(user)
     return _user_out(user, await _watchlist_count(session, user.id))
+
+
+@router.post("/users/{user_id}/resend-verification", status_code=202)
+async def resend_verification(
+    user_id: int,
+    admin: User = Depends(current_superuser),
+    session: AsyncSession = Depends(get_session),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    """Send (or resend) the account-activation email to an unverified user."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(404, f"No user with id {user_id}")
+    try:
+        await user_manager.request_verify(user)
+    except exceptions.UserAlreadyVerified:
+        raise HTTPException(400, f"{user.email} is already verified")
+    except exceptions.UserInactive:
+        raise HTTPException(400, f"{user.email} is suspended - activate the account first")
+    return {"status": "sent", "email": user.email}
 
 
 @router.get("/users/{user_id}/watchlist", response_model=list[WatchlistItemOut])

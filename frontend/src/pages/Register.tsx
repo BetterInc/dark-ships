@@ -1,16 +1,17 @@
 import { FormEvent, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 export default function Register() {
   const { register, googleAuthUrl } = useAuth()
-  const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [registered, setRegistered] = useState<string | null>(null)
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fields = new FormData(e.currentTarget)
+    const email = String(fields.get('email'))
     const password = String(fields.get('password'))
     const confirm = String(fields.get('confirm'))
     if (password !== confirm) {
@@ -20,13 +21,30 @@ export default function Register() {
     setBusy(true)
     setError(null)
     try {
-      await register(String(fields.get('email')), password)
-      navigate('/', { replace: true })
+      await register(email, password)
+      setRegistered(email)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
     }
+  }
+
+  if (registered) {
+    return (
+      <div className="auth-wrap">
+        <div className="auth-card">
+          <h1>Check your inbox</h1>
+          <p className="notice">
+            We sent an activation link to <b>{registered}</b>. Open it to verify
+            your email address, then sign in.
+          </p>
+          <div className="auth-links">
+            <Link to="/login">Go to sign in</Link>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   async function google() {

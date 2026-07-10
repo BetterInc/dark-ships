@@ -15,6 +15,7 @@ import Register from './pages/Register'
 import ResetPassword from './pages/ResetPassword'
 import Sources from './pages/Sources'
 import Suggestions from './pages/Suggestions'
+import VerifyEmail from './pages/VerifyEmail'
 import Watchlist from './pages/Watchlist'
 
 function utcClock(): string {
@@ -132,6 +133,7 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/verify" element={<VerifyEmail />} />
         </Routes>
       </main>
     </div>

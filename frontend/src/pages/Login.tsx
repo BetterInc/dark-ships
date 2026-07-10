@@ -3,11 +3,13 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 export default function Login() {
-  const { login, googleAuthUrl } = useAuth()
+  const { login, resendVerification, googleAuthUrl } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
+  const [resent, setResent] = useState(false)
 
   // where to send the user after a successful login (RequireAuth stashes this)
   const from = (location.state as { from?: string } | null)?.from ?? '/'
@@ -16,15 +18,34 @@ export default function Login() {
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fields = new FormData(e.currentTarget)
+    const email = String(fields.get('email'))
     setBusy(true)
     setError(null)
+    setUnverifiedEmail(null)
+    setResent(false)
     try {
-      await login(String(fields.get('email')), String(fields.get('password')))
+      await login(email, String(fields.get('password')))
       navigate(from, { replace: true })
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg === 'LOGIN_USER_NOT_VERIFIED') {
+        setError('Your email address is not verified yet. Check your inbox for the activation link.')
+        setUnverifiedEmail(email)
+      } else {
+        setError(msg)
+      }
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function resend() {
+    if (!unverifiedEmail) return
+    try {
+      await resendVerification(unverifiedEmail)
+      setResent(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -45,6 +66,15 @@ export default function Login() {
 
         {note && <p className="notice">{note}</p>}
         {error && <p className="error">{error}</p>}
+        {unverifiedEmail && (
+          resent ? (
+            <p className="notice">Activation email sent to {unverifiedEmail}. Check your inbox.</p>
+          ) : (
+            <button className="ghost" type="button" onClick={resend}>
+              Resend activation email
+            </button>
+          )
+        )}
 
         <form className="auth-form" onSubmit={submit}>
           <label className="field">

@@ -48,6 +48,9 @@ async def init_db() -> None:
             "ALTER TABLE vessels ADD COLUMN IF NOT EXISTS risk_score DOUBLE PRECISION NOT NULL DEFAULT 0",
             "ALTER TABLE vessels ADD COLUMN IF NOT EXISTS followed BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE vessel_registry ADD COLUMN IF NOT EXISTS draught DOUBLE PRECISION",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(16) NOT NULL DEFAULT 'user'",
+            # backfill accounts promoted before the role column existed
+            "UPDATE users SET role = 'admin' WHERE is_superuser AND role = 'user'",
         ):
             await conn.execute(text(ddl))
         # promote already-registered admin accounts (idempotent; new signups
@@ -55,7 +58,10 @@ async def init_db() -> None:
         admin_emails = sorted(get_settings().admin_email_set)
         if admin_emails:
             await conn.execute(
-                text("UPDATE users SET is_superuser = TRUE WHERE lower(email) = ANY(:emails)"),
+                # also verified: login requires it, and an admin locked out of
+                # their own instance helps nobody
+                text("UPDATE users SET is_superuser = TRUE, role = 'admin', "
+                     "is_verified = TRUE WHERE lower(email) = ANY(:emails)"),
                 {"emails": admin_emails},
             )
     # positions is monthly-partitioned: make sure the current + upcoming month
@@ -198,7 +204,9 @@ app.include_router(
     tags=["auth"],
 )
 app.include_router(
-    fastapi_users.get_auth_router(auth_backend),
+    # unverified accounts cannot log in (LOGIN_USER_NOT_VERIFIED) - the frontend
+    # offers a resend, and /api/auth/verify flips the flag
+    fastapi_users.get_auth_router(auth_backend, requires_verification=True),
     prefix="/api/auth/jwt",
     tags=["auth"],
 )

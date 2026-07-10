@@ -33,6 +33,10 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # user | partner | admin. Kept in sync with is_superuser (admin <=> True),
+    # which remains the flag fastapi-users' own routers gate on.
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="user",
+                                      server_default="user")
     oauth_accounts: Mapped[list[OAuthAccount]] = relationship(
         "OAuthAccount", lazy="joined"
     )
