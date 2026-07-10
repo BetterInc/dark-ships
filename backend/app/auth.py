@@ -4,6 +4,7 @@ Exports:
   - fastapi_users:        the FastAPIUsers instance (router factories)
   - auth_backend:         JWT + Bearer transport (token in Authorization header)
   - current_active_user:  dependency other routers import to require a login
+  - current_superuser:    same, but additionally requires is_superuser (admin)
   - google_oauth_client:  GoogleOAuth2 client or None when creds are unset
   - UserRead/UserCreate/UserUpdate: pydantic schemas for the routers
 """
@@ -63,6 +64,13 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         self, user: User, request: Optional[Request] = None
     ) -> None:
         logger.info("User %s registered", user.id)
+        # bootstrap: emails listed in ADMIN_EMAILS become superusers on signup
+        if user.email.lower() in get_settings().admin_email_set:
+            user = await self.user_db.update(
+                user, {"is_superuser": True, "is_verified": True})
+            logger.info("User %s promoted to superuser via ADMIN_EMAILS", user.id)
+        if user.is_verified:
+            return
         # fire off a verification email (best effort - never block register)
         try:
             await self.request_verify(user, request)
@@ -105,6 +113,8 @@ fastapi_users = FastAPIUsers[User, int](get_user_manager, [auth_backend])
 
 # the reusable dependency the watchlist agent (and other routers) will import
 current_active_user = fastapi_users.current_user(active=True)
+# admin-only routes: 401 when unauthenticated, 403 when not a superuser
+current_superuser = fastapi_users.current_user(active=True, superuser=True)
 
 
 # ---- Google OAuth (only enabled when creds are configured) --------------

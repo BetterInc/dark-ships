@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 
-from .api import gaps, imagery, positions, suggestions, user_events, user_watchlist, vessels
+from .api import admin, gaps, imagery, positions, suggestions, user_events, user_watchlist, vessels
 from .auth import (
     UserCreate,
     UserRead,
@@ -50,6 +50,14 @@ async def init_db() -> None:
             "ALTER TABLE vessel_registry ADD COLUMN IF NOT EXISTS draught DOUBLE PRECISION",
         ):
             await conn.execute(text(ddl))
+        # promote already-registered admin accounts (idempotent; new signups
+        # are promoted in UserManager.on_after_register instead)
+        admin_emails = sorted(get_settings().admin_email_set)
+        if admin_emails:
+            await conn.execute(
+                text("UPDATE users SET is_superuser = TRUE WHERE lower(email) = ANY(:emails)"),
+                {"emails": admin_emails},
+            )
     # positions is monthly-partitioned: make sure the current + upcoming month
     # partitions exist before ingest starts inserting.
     await ensure_partitions()
@@ -181,6 +189,7 @@ app.include_router(suggestions.router)
 app.include_router(imagery.router)
 app.include_router(user_watchlist.router)
 app.include_router(user_events.router)
+app.include_router(admin.router)
 
 # ---- auth / accounts (FastAPI-Users), all under /api --------------------
 app.include_router(

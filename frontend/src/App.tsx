@@ -4,6 +4,7 @@ import { usePolling } from './api/client'
 import { useAuth } from './auth/AuthContext'
 import RequireAuth from './auth/RequireAuth'
 import type { Gap, Vessel } from './api/types'
+import Admin from './pages/Admin'
 import Events from './pages/Events'
 import ForgotPassword from './pages/ForgotPassword'
 import Glossary from './pages/Glossary'
@@ -66,7 +67,10 @@ export default function App() {
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((v) => !v)}
         >
-          ☰
+          {/* inline SVG, not a font glyph: mobile mono fonts lack U+2630 */}
+          <svg width="18" height="14" viewBox="0 0 18 14" aria-hidden="true">
+            <path d="M1 1h16M1 7h16M1 13h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
         </button>
         <nav className={menuOpen ? 'open' : ''} onClick={() => setMenuOpen(false)}>
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
@@ -90,6 +94,11 @@ export default function App() {
           <NavLink to="/glossary" className={({ isActive }) => (isActive ? 'active' : '')}>
             Glossary
           </NavLink>
+          {user?.is_superuser && (
+            <NavLink to="/admin" className={({ isActive }) => (isActive ? 'active' : '')}>
+              Admin
+            </NavLink>
+          )}
           <span className="nav-sep" aria-hidden />
           {user ? (
             <span className="nav-account">
@@ -116,6 +125,7 @@ export default function App() {
           <Route path="/suggestions" element={<RequireAuth><Suggestions /></RequireAuth>} />
           <Route path="/events" element={<RequireAuth><Events /></RequireAuth>} />
           <Route path="/imagery" element={<RequireAuth><Imagery /></RequireAuth>} />
+          <Route path="/admin" element={<RequireAuth admin><Admin /></RequireAuth>} />
           <Route path="/sources" element={<Sources />} />
           <Route path="/glossary" element={<Glossary />} />
           <Route path="/login" element={<Login />} />

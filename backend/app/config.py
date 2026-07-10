@@ -103,6 +103,13 @@ class Settings(BaseSettings):
     # frontend_base_url. Cloudflare Pages preview URLs (*.pages.dev) are matched
     # by regex in main.py so they don't need listing here.
     cors_origins: str = ""
+    # Comma-separated emails auto-promoted to superuser (admin panel access):
+    # applied at registration and, for existing accounts, at worker startup.
+    admin_emails: str = ""
+
+    @property
+    def admin_email_set(self) -> set[str]:
+        return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
 
     # Local mail (Mailpit in dev): the backend reaches it by service name.
     mail_host: str = "localhost"
