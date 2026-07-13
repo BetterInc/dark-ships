@@ -150,13 +150,13 @@ OS_URL = "https://data.opensanctions.org/datasets/latest/{slug}/entities.ftm.jso
 
 # OpenSanctions vessel datasets we ingest (all CC BY-NC 4.0 - non-commercial
 # only; a commercial deployment needs an OpenSanctions data license).
+# Canada and Australia moved to direct-from-government importers below
+# (import_canada / import_australia) - official downloads, commercial-safe.
 #   source label  -> (dataset slug, program tag)
 OS_VESSEL_DATASETS = {
     "gur": ("ua_war_sanctions", "GUR-shadow-fleet"),
     "parismou": ("paris_mou_banned", "Paris-MoU-port-ban"),
     "tokyomou": ("tokyo_mou_detention", "Tokyo-MoU-detention"),
-    "canada": ("ca_dfatd_sema_sanctions", "Canada-SEMA"),
-    "australia": ("au_dfat_sanctions", "Australia-DFAT"),
     "switzerland": ("ch_seco_sanctions", "Switzerland-SECO"),
     "un1718": ("un_1718_vessels", "UN-1718-DPRK"),
     "blackseamou": ("black_sea_mou_detention", "Black-Sea-MoU-detention"),
@@ -484,6 +484,189 @@ async def import_eu_iuu() -> int:
     return len(seen)
 
 
+# --- Direct-from-government importers (2026-07-13) --------------------------
+# These replace CC-BY-NC OpenSanctions mirrors (Canada, Australia) and add new
+# authorities (New Zealand) plus commercial-clean RFMO IUU lists (ICCAT, WCPFC)
+# - all official downloads verified live, licenses permit commercial reuse
+# (NZ/AU: CC BY 4.0; Canada: GoC open publication; RFMO: official publications).
+
+BROWSER_UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                            "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
+
+NZ_URL = ("https://www.mfat.govt.nz/assets/Countries-and-Regions/Europe/"
+          "Ukraine/Russia-Sanctions-Register.xlsx")
+AU_URL = ("https://www.dfat.gov.au/sites/default/files/"
+          "Australian_Sanctions_Consolidated_List.xlsx")
+CA_URL = ("https://www.international.gc.ca/world-monde/assets/office_docs/"
+          "international_relations-relations_internationales/sanctions/sema-lmes.xml")
+ICCAT_URL = "https://www.iccat.int/Data/IUU/IUU.xlsx"
+WCPFC_URL = "https://iuu.imcsnet.org/rfmo/3/final"
+
+
+async def _fetch_bytes(url: str, timeout: int = 300) -> bytes:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True,
+                                 headers=BROWSER_UA) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.content
+
+
+def _xlsx_rows(content: bytes, sheet: str | None = None):
+    """Header-mapped rows of an XLSX sheet: yields dicts keyed by lowercased
+    header text. read_only mode keeps the 20MB NZ register out of memory."""
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(content), read_only=True)
+    try:
+        name = sheet if sheet in wb.sheetnames else wb.sheetnames[0]
+        rows = wb[name].iter_rows(values_only=True)
+        header = [str(c or "").strip().lower() for c in next(rows, [])]
+        for row in rows:
+            yield {h: (str(c).strip() if c is not None else "")
+                   for h, c in zip(header, row)}
+    finally:
+        wb.close()
+
+
+async def _replace_source(source: str, entries: list[RiskListEntry]) -> int:
+    """Swap in a freshly imported list. Refuses an empty parse (layout change /
+    truncated download must never wipe a working list)."""
+    if not entries:
+        logger.warning("%s import: parsed 0 vessels - keeping existing data", source)
+        return 0
+    async with SessionLocal() as session:
+        await session.execute(delete(RiskListEntry).where(RiskListEntry.source == source))
+        session.add_all(entries)
+        await session.commit()
+    logger.info("%s import: %d vessels", source, len(entries))
+    return len(entries)
+
+
+async def import_nz() -> int:
+    """New Zealand MFAT Russia Sanctions Register, 'Ships' worksheet (210+
+    vessels incl. 100 shadow-fleet designations added Feb 2026). CC BY 4.0
+    (attribute to the Crown) - commercial-safe. XLSX is the only format."""
+    content = await _fetch_bytes(NZ_URL)
+    now = datetime.now(timezone.utc)
+    best: dict[str, RiskListEntry] = {}
+    for row in _xlsx_rows(content, sheet="Ships"):
+        if (row.get("type") or "").lower() != "ship":
+            continue
+        status = (row.get("sanction status") or "").lower()
+        if "de-list" in status or "revok" in status:
+            continue
+        imo = "".join(c for c in (row.get("imo number") or "") if c.isdigit())
+        if not valid_imo(imo):
+            continue
+        name = next((v for k, v in row.items() if k.startswith("name of ship") and v), "")
+        best[imo] = RiskListEntry(source="nz", imo=imo, name=name[:128] or None,
+                                  program="NZ-Russia-Sanctions", imported_at=now)
+    return await _replace_source("nz", list(best.values()))
+
+
+async def import_australia() -> int:
+    """Australian DFAT Consolidated List, direct XLSX (~262 vessel rows with a
+    dedicated IMO column). CC BY 4.0 - the commercial-safe replacement for the
+    CC-BY-NC OpenSanctions au_dfat_sanctions mirror."""
+    content = await _fetch_bytes(AU_URL)
+    now = datetime.now(timezone.utc)
+    best: dict[str, RiskListEntry] = {}
+    for row in _xlsx_rows(content):
+        if (row.get("type") or "").lower() != "vessel":
+            continue
+        imo = "".join(c for c in (row.get("imo number") or "") if c.isdigit())
+        if not valid_imo(imo):
+            continue
+        is_primary = (row.get("name type") or "").lower().startswith("primary")
+        if imo in best and not is_primary:
+            continue
+        name = (row.get("name of individual or entity") or "")[:128]
+        program = (row.get("committees") or "Australia-DFAT")[:128]
+        best[imo] = RiskListEntry(source="australia", imo=imo, name=name or None,
+                                  program=program or "Australia-DFAT", imported_at=now)
+    return await _replace_source("australia", list(best.values()))
+
+
+async def import_canada() -> int:
+    """Global Affairs Canada consolidated sanctions list, direct XML (~730 ship
+    records with <ShipIMONumber>). Official government publication - the
+    direct replacement for the CC-BY-NC OpenSanctions ca_dfatd mirror."""
+    import xml.etree.ElementTree as ET
+
+    content = await _fetch_bytes(CA_URL, timeout=120)
+    root = ET.fromstring(content)
+    now = datetime.now(timezone.utc)
+    best: dict[str, RiskListEntry] = {}
+    for rec in root.iter("record"):
+        imo = "".join(c for c in (rec.findtext("ShipIMONumber") or "") if c.isdigit())
+        if not valid_imo(imo):
+            continue
+        name = (rec.findtext("EntityOrShip") or "").strip()[:128]
+        # Country is the sanctions regime ("Russia / Russie"), not the flag
+        regime = (rec.findtext("Country") or "").split("/")[0].strip()
+        program = f"Canada-SEMA {regime}".strip()[:128]
+        best[imo] = RiskListEntry(source="canada", imo=imo, name=name or None,
+                                  program=program, imported_at=now)
+    return await _replace_source("canada", list(best.values()))
+
+
+async def import_iccat() -> int:
+    """ICCAT IUU vessel list, official XLSX ('IUUs' sheet = currently listed;
+    the historical sheet is skipped). Only vessels with a valid IMO are kept -
+    many IUU boats legitimately lack one."""
+    content = await _fetch_bytes(ICCAT_URL, timeout=120)
+    now = datetime.now(timezone.utc)
+    best: dict[str, RiskListEntry] = {}
+    for row in _xlsx_rows(content, sheet="IUUs"):
+        imo = "".join(c for c in (row.get("imono") or "") if c.isdigit())
+        if not valid_imo(imo):
+            continue
+        flag = row.get("flagiuu") or ""
+        if flag.lower().startswith("unclassified") or flag.lower() == "unknown":
+            flag = ""
+        callsign = row.get("ircs") or ""
+        if callsign.lower() == "unknown":
+            callsign = ""
+        best[imo] = RiskListEntry(source="iccat", imo=imo,
+                                  name=(row.get("vesselname") or "")[:128] or None,
+                                  callsign=callsign[:16] or None, flag=flag[:64] or None,
+                                  program="ICCAT-IUU", imported_at=now)
+    return await _replace_source("iccat", list(best.values()))
+
+
+def _wcpfc_field(rec: dict, key: str) -> str:
+    """IMCS records are Drupal field arrays: {key: [{'value': ...}]}."""
+    v = rec.get(key)
+    if isinstance(v, list):
+        v = (v[0] or {}).get("value") if v else None
+    return str(v).strip() if v not in (None, "") else ""
+
+
+async def import_wcpfc() -> int:
+    """WCPFC IUU vessel list via the IMCS Network JSON endpoint the official
+    wcpfc.int page embeds (rfmo id 3). Structured per-vessel JSON incl. IMO and
+    call sign; delisted vessels are excluded."""
+    import json as json_mod
+
+    content = await _fetch_bytes(WCPFC_URL, timeout=60)
+    data = json_mod.loads(content)
+    records = list(data.values()) if isinstance(data, dict) else list(data)
+    now = datetime.now(timezone.utc)
+    best: dict[str, RiskListEntry] = {}
+    for rec in records:
+        if not isinstance(rec, dict) or _wcpfc_field(rec, "iuu_delisting_effective_from"):
+            continue
+        imo = "".join(c for c in _wcpfc_field(rec, "iuu_imo") if c.isdigit())
+        if not valid_imo(imo):
+            continue
+        best[imo] = RiskListEntry(
+            source="wcpfc", imo=imo,
+            name=_wcpfc_field(rec, "iuu_vessel_name")[:128] or None,
+            callsign=_wcpfc_field(rec, "iuu_ircs")[:16] or None,
+            flag=_wcpfc_field(rec, "iuu_flag_iso2")[:64] or None,
+            program="WCPFC-IUU", imported_at=now)
+    return await _replace_source("wcpfc", list(best.values()))
+
+
 async def import_all(force: bool = False) -> dict[str, int]:
     """Run all importers. Without force, skip if data is under a day old.
 
@@ -491,7 +674,8 @@ async def import_all(force: bool = False) -> dict[str, int]:
     killed mid-import (pod roll) would otherwise leave one fresh source
     making the whole partial dataset look up to date for 20h.
     """
-    expected = {"ofac", *OS_VESSEL_DATASETS, "eu", "uk", "uani", "iuu", "eu_iuu"}
+    expected = {"ofac", *OS_VESSEL_DATASETS, "eu", "uk", "uani", "iuu", "eu_iuu",
+                "nz", "australia", "canada", "iccat", "wcpfc"}
     async with SessionLocal() as session:
         per_source = dict((await session.execute(
             select(RiskListEntry.source, func.max(RiskListEntry.imported_at))
@@ -514,7 +698,10 @@ async def import_all(force: bool = False) -> dict[str, int]:
         except Exception:
             logger.exception("%s import failed", source)
     for name, fn in (("eu", import_eu), ("uk", import_uk), ("uani", import_uani),
-                     ("iuu", import_iuu), ("eu_iuu", import_eu_iuu)):
+                     ("iuu", import_iuu), ("eu_iuu", import_eu_iuu),
+                     ("nz", import_nz), ("australia", import_australia),
+                     ("canada", import_canada), ("iccat", import_iccat),
+                     ("wcpfc", import_wcpfc)):
         try:
             results[name] = await fn()
         except Exception:

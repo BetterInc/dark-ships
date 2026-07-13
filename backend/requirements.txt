@@ -11,6 +11,8 @@ fastapi-users[sqlalchemy]>=13,<15
 httpx-oauth>=0.14
 aiosmtplib>=3.0
 duckdb>=1.1
+# XLSX risk-list downloads (NZ MFAT register, Australia DFAT list, ICCAT IUU)
+openpyxl>=3.1
 pytz>=2024.1
 # rate limiting primitive (same lib slowapi/flask-limiter build on). Memory
 # backend by default; point RATELIMIT_STORAGE_URI at Redis/Valkey to share the

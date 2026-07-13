@@ -220,10 +220,14 @@ SOURCE_META = {
                  "Live banning list, typically dozens"),
     "tokyomou": ("Tokyo MoU detentions", None, "CC BY-NC", True,
                  "~1,189 ships detained per year; corroboration signal, not a designation"),
-    "canada": ("Canada SEMA", None, "CC BY-NC", True,
-               "Mostly mirrors Russia/DPRK designations; adds some net-new hulls"),
-    "australia": ("Australia DFAT", None, "CC BY-NC", True,
-                  "Largely mirrors allied Russia/DPRK lists"),
+    "canada": ("Canada SEMA", None, "Official gov XML", True,
+               "Direct Global Affairs Canada download (~730 ships); "
+               "mostly mirrors Russia/DPRK designations, adds some net-new hulls"),
+    "australia": ("Australia DFAT", None, "CC BY 4.0", True,
+                  "Direct DFAT consolidated-list XLSX (~262 vessels); "
+                  "largely mirrors allied Russia/DPRK lists"),
+    "nz": ("New Zealand MFAT", 210, "CC BY 4.0", True,
+           "Russia Sanctions Register Ships sheet; +100 shadow-fleet vessels Feb 2026"),
     "switzerland": ("Switzerland SECO", None, "CC BY-NC", True,
                     "Tracks EU designations closely; some net-new"),
     "iuu": ("Combined IUU fishing list", None, "Non-commercial", True,
@@ -237,6 +241,10 @@ SOURCE_META = {
                     "PSC detentions in Black/Azov Sea shadow-fleet waters; corroboration"),
     "abujamou": ("Abuja MoU detentions", None, "CC BY-NC", True,
                  "PSC detentions in W/C Africa (narco/oil-theft/IUU); corroboration"),
+    "iccat": ("ICCAT IUU list", None, "Official RFMO", True,
+              "Atlantic tuna commission blacklist, official XLSX; IMO-bearing subset"),
+    "wcpfc": ("WCPFC IUU list", None, "Official RFMO", True,
+              "W/C Pacific fisheries blacklist via the IMCS JSON feed wcpfc.int embeds"),
 }
 # best current estimate of the total global shadow/dark fleet (RUSI/Windward)
 GLOBAL_FLEET_ESTIMATE = 1400
@@ -262,7 +270,7 @@ async def risklists_status(session: AsyncSession = Depends(get_session)):
     # role drives how each source is presented: a designation counts toward
     # coverage; a detention is corroboration only; fishing is its own track.
     roles = {"tokyomou": "detention", "blackseamou": "detention", "abujamou": "detention",
-             "iuu": "fishing", "eu_iuu": "fishing"}
+             "iuu": "fishing", "eu_iuu": "fishing", "iccat": "fishing", "wcpfc": "fishing"}
     out = []
     for src, (name, official, lic, auto, note) in SOURCE_META.items():
         collected, ts = rows.get(src, (0, None))

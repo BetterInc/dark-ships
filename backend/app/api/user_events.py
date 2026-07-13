@@ -33,6 +33,9 @@ SANCTION_RULES = {
     "risklist_australia",
     "risklist_iuu",
     "risklist_eu_iuu",
+    "risklist_nz",
+    "risklist_iccat",
+    "risklist_wcpfc",
 }
 
 
