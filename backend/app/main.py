@@ -9,7 +9,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from .api import admin, gaps, imagery, positions, suggestions, user_events, user_watchlist, vessels
+from .api import admin, imagery, positions, suggestions, user_events, user_watchlist, vessels
 from .auth import (
     UserCreate,
     UserRead,
@@ -307,7 +307,6 @@ async def security_headers(request: Request, call_next):
 
 app.include_router(vessels.router)
 app.include_router(positions.router)
-app.include_router(gaps.router)
 app.include_router(suggestions.router)
 app.include_router(imagery.router)
 app.include_router(user_watchlist.router)

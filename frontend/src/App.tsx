@@ -3,7 +3,7 @@ import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { usePolling } from './api/client'
 import { useAuth } from './auth/AuthContext'
 import RequireAuth from './auth/RequireAuth'
-import type { Gap, Vessel } from './api/types'
+import type { Vessel } from './api/types'
 import Admin from './pages/Admin'
 import Events from './pages/Events'
 import ForgotPassword from './pages/ForgotPassword'
@@ -29,7 +29,6 @@ export default function App() {
   const [clock, setClock] = useState(utcClock())
   const [menuOpen, setMenuOpen] = useState(false)
   const { data: vessels } = usePolling<Vessel[]>('/vessels', 60_000)
-  const { data: openGaps } = usePolling<Gap[]>('/gaps?status=open', 60_000)
   // the header shows YOUR flags, not the engine's: the suggestion queue
   // lives on the Suggestions page only (401s harmlessly while logged out)
   const { data: myList } = usePolling<{ mmsi: number }[]>('/me/watchlist', 60_000)
@@ -40,7 +39,6 @@ export default function App() {
   }, [])
 
   const active = vessels?.filter((v) => v.active).length ?? '-'
-  const gaps = openGaps?.length ?? '-'
   const following = myList?.length ?? 0
 
   return (
@@ -55,9 +53,6 @@ export default function App() {
         </div>
         <div className="instrument">
           Watchlist<b>{active}</b>
-        </div>
-        <div className={`instrument${typeof gaps === 'number' && gaps > 0 ? ' alert' : ''}`}>
-          Open gaps<b>{gaps}</b>
         </div>
         {user && (
           <div className="instrument">

@@ -19,7 +19,6 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://darkships:darkships@localhost:5432/darkships"
 
-    aisstream_api_key_watchlist: str = ""
     aisstream_api_key_regions: str = ""
     ais_regions: list[Region] = []
     # Subscribe globally on the regions connection. We now persist history for
@@ -36,9 +35,7 @@ class Settings(BaseSettings):
 
     # Retention: prune ambient position history past this age to cap disk use
     # (~215 GB/yr unmanaged). Detectors look back <=36 days, so 90 is safe.
-    # Watchlist ships' history is kept longer.
     positions_retention_days: int = 90
-    watchlist_retention_days: int = 400
 
     # Behaviour engine / public Suggestions. The engine populates the shared
     # `vessels` table (auto_added) that powers the public Suggestions feed.

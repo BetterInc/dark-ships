@@ -120,34 +120,6 @@ export interface TrackPoint {
   sog: number | null
 }
 
-export interface SarMatch {
-  id: number
-  gap_id: number
-  source: 'sentinel-1' | 'sentinel-2' | 'gfw'
-  product_id: string
-  product_name: string | null
-  acquired_at: string
-  quicklook_url: string | null
-  browser_url: string | null
-}
-
-export interface Gap {
-  id: number
-  mmsi: number
-  gap_start: string
-  gap_end: string | null
-  last_lat: number
-  last_lon: number
-  last_sog: number | null
-  first_lat_after: number | null
-  first_lon_after: number | null
-  distance_nm: number | null
-  status: 'open' | 'closed'
-  vessel_name: string | null
-  category: Category | null
-  sar_matches: SarMatch[]
-}
-
 export interface Region {
   name: string
   bbox: [[number, number], [number, number]]

@@ -4,21 +4,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import { api, usePolling } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
-import { detailBits, ruleLabel } from '../api/labels'
-import type { Cluster, Gap, LatestPosition, PositionCheck, Region, Suggestion, TrackPoint, WorldPosition } from '../api/types'
-
-// One row per distinct flag (rule), keeping the most recent occurrence - events
-// arrive newest-first - so the panel shows each reason once, not 20 repeats.
-function dedupeEvents(events: Suggestion['events']): Suggestion['events'] {
-  const seen = new Set<string>()
-  const out: Suggestion['events'] = []
-  for (const e of events) {
-    if (seen.has(e.rule)) continue
-    seen.add(e.rule)
-    out.push(e)
-  }
-  return out.slice(0, 8)
-}
+import type { Cluster, LatestPosition, PositionCheck, Region, TrackPoint, WorldPosition } from '../api/types'
 
 // Compact "+ Watchlist" control for the vessel info panels. Adds a ship to the
 // logged-in user's private watchlist; logged-out users are sent to login.
@@ -127,8 +113,6 @@ const COLORS: Record<string, string> = {
   other: '#34d399',        // green - behaviour flags only
   region: '#55708c',       // slate - ordinary traffic
 }
-const GAP_RING = '#ef4444'
-
 const MAP_STYLE: maplibregl.StyleSpecification = {
   version: 8,
   sources: {
@@ -221,35 +205,6 @@ function vesselsToGeoJSON(positions: LatestPosition[]): GeoJSON.FeatureCollectio
   }
 }
 
-function flaggedToGeoJSON(suggestions: Suggestion[]): GeoJSON.FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: suggestions
-      .filter((s) => !s.on_watchlist && s.lat != null && s.lon != null)
-      .map((s) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [s.lon as number, s.lat as number] },
-        properties: {
-          mmsi: s.mmsi,
-          name: s.name ?? String(s.mmsi),
-          risk: s.score,
-          rules: [...new Set(s.events.map((e) => e.rule))].join(', '),
-        },
-      })),
-  }
-}
-
-function gapsToGeoJSON(gaps: Gap[]): GeoJSON.FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: gaps.map((g) => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [g.last_lon, g.last_lat] },
-      properties: { mmsi: g.mmsi, name: g.vessel_name ?? String(g.mmsi) },
-    })),
-  }
-}
-
 function regionsToGeoJSON(regions: Region[]): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
@@ -274,7 +229,6 @@ export default function LiveMap() {
   const mapRef = useRef<MLMap | null>(null)
   const [mapReady, setMapReady] = useState(false)
   const [selected, setSelected] = useState<LatestPosition | null>(null)
-  const [selectedFlag, setSelectedFlag] = useState<Suggestion | null>(null)
   const [selectedCluster, setSelectedCluster] = useState<Cluster | null>(null)
   const [selectedAmbient, setSelectedAmbient] = useState<AmbientInfo | null>(null)
   const { mmsi: shipParam } = useParams()          // /ship/:mmsi (canonical)
@@ -288,19 +242,6 @@ export default function LiveMap() {
   // mobile: the legend / anchorage panels collapse behind toggle chips
   const [showLegend, setShowLegend] = useState(false)
   const [showClusters, setShowClusters] = useState(false)
-  // unverified suspects are opt-in, remembered per browser
-  const [showSuspects, setShowSuspects] = useState(
-    () => localStorage.getItem('ds-show-suspects') === '1')
-  useEffect(() => {
-    localStorage.setItem('ds-show-suspects', showSuspects ? '1' : '0')
-  }, [showSuspects])
-  // gap rings ("went dark here") are opt-in too - dozens of open gaps
-  // otherwise clutter the map by default
-  const [showGaps, setShowGaps] = useState(
-    () => localStorage.getItem('ds-show-gaps') === '1')
-  useEffect(() => {
-    localStorage.setItem('ds-show-gaps', showGaps ? '1' : '0')
-  }, [showGaps])
   const { followed, addFollowed } = useFollowed()
   // default to the auto-watchlist threshold (50); remember the user's choice
   const [minRisk, setMinRisk] = useState(() => {
@@ -329,11 +270,11 @@ export default function LiveMap() {
     // prefer the rich watchlist panel if we're already tracking this ship
     const pos = positions?.find((p) => p.mmsi === hit.mmsi)
     if (pos) {
-      setSelectedFlag(null); setSelectedCluster(null); setSelectedAmbient(null); setSelected(pos)
+      setSelectedCluster(null); setSelectedAmbient(null); setSelected(pos)
       return
     }
     api<Omit<AmbientInfo, 'lat' | 'lon' | 'sog' | 'bearing'>>(`/vessels/${hit.mmsi}/info`)
-      .then((info) => { setSelected(null); setSelectedFlag(null); setSelectedCluster(null)
+      .then((info) => { setSelected(null); setSelectedCluster(null)
         setSelectedAmbient({ ...info, lat: hit.lat ?? 0, lon: hit.lon ?? 0, sog: 0, bearing: 0 }) })
       .catch(() => {})
   }
@@ -345,7 +286,7 @@ export default function LiveMap() {
     const pos = positions?.find((p) => p.mmsi === mmsi)
     if (pos) {
       mapRef.current?.flyTo({ center: [pos.lon, pos.lat], zoom: 11, essential: true })
-      setSelectedFlag(null); setSelectedCluster(null); setSelectedAmbient(null); setSelected(pos)
+      setSelectedCluster(null); setSelectedAmbient(null); setSelected(pos)
       return
     }
     try {
@@ -358,10 +299,8 @@ export default function LiveMap() {
   }
 
   const { data: positions } = usePolling<LatestPosition[]>('/positions/latest', 30_000)
-  const { data: openGaps } = usePolling<Gap[]>('/gaps?status=open', 60_000)
   const { data: regions } = usePolling<Region[]>('/regions', 300_000)
   const { data: world } = usePolling<WorldPosition[]>('/positions/world', 120_000)
-  const { data: suggestions } = usePolling<Suggestion[]>('/suggestions', 60_000)
   const { data: clusters } = usePolling<Cluster[]>('/clusters', 60_000)
 
   // Shareable deep link: on first load, focus the ship named in ?ship=<mmsi>.
@@ -383,11 +322,11 @@ export default function LiveMap() {
   useEffect(() => {
     // don't touch the URL until a pending deep link has been consumed
     if (initialShip.current && !deepLinked.current) return
-    const mmsi = selected?.mmsi ?? selectedAmbient?.mmsi ?? selectedFlag?.mmsi
+    const mmsi = selected?.mmsi ?? selectedAmbient?.mmsi
     const target = mmsi != null ? `/ship/${mmsi}` : '/'
     if (location.pathname !== target) navigate(target, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, selectedAmbient, selectedFlag])
+  }, [selected, selectedAmbient])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -533,33 +472,6 @@ export default function LiveMap() {
         },
       })
 
-      // flagged by the behaviour engine but not (yet) on the watchlist: hollow amber
-      map.addSource('flagged', { type: 'geojson', data: flaggedToGeoJSON([]) })
-      map.addLayer({
-        id: 'flagged-rings',
-        type: 'circle',
-        source: 'flagged',
-        paint: {
-          'circle-radius': ['+', 7, ['/', ['min', ['get', 'risk'], 150], 20]],
-          'circle-color': 'rgba(0,0,0,0)',
-          'circle-stroke-width': 2,
-          'circle-stroke-color': COLORS.shadow_fleet,
-        },
-      })
-
-      map.addSource('gaps', { type: 'geojson', data: gapsToGeoJSON([]) })
-      map.addLayer({
-        id: 'gaps-ring',
-        type: 'circle',
-        source: 'gaps',
-        paint: {
-          'circle-radius': 11,
-          'circle-color': 'rgba(0,0,0,0)',
-          'circle-stroke-width': 2,
-          'circle-stroke-color': GAP_RING,
-        },
-      })
-
       map.addSource('track', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -591,7 +503,7 @@ export default function LiveMap() {
       // Tapping already opens the info panel, so phones lose nothing.
       const canHover = window.matchMedia('(hover: hover)').matches
       const hover = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 })
-      if (canHover) for (const layer of ['vessels-dots', 'vessels-arrows', 'flagged-rings']) {
+      if (canHover) for (const layer of ['vessels-dots', 'vessels-arrows']) {
         map.on('mousemove', layer, (e) => {
           map.getCanvas().style.cursor = 'pointer'
           const f = e.features?.[0]
@@ -653,22 +565,17 @@ export default function LiveMap() {
             map.project((f.geometry as GeoJSON.Point).coordinates as [number, number]).y - e.point.y) }))
           .sort((a, b) => a.d - b.d)
 
-      const clearAll = () => { setSelectedFlag(null); setSelectedCluster(null); setSelectedAmbient(null) }
+      const clearAll = () => { setSelectedCluster(null); setSelectedAmbient(null) }
       const ship = [...near('vessels-dots'), ...near('vessels-arrows')].sort((a, b) => a.d - b.d)[0]
       if (ship) {
         const pos = positions?.find((p) => p.mmsi === ship.f.properties?.mmsi)
         if (pos) { clearAll(); setSelected(pos); return }
       }
-      const flag = near('flagged-rings')[0]
-      if (flag) {
-        const sug = suggestions?.find((s) => s.mmsi === flag.f.properties?.mmsi)
-        if (sug) { setSelected(null); setSelectedCluster(null); setSelectedAmbient(null); setSelectedFlag(sug); return }
-      }
       const cl = near('clusters-glow')[0]
       if (cl) {
         const lat = (cl.f.geometry as GeoJSON.Point).coordinates[1]
         const c = clusters?.find((x) => Math.abs(x.lat - lat) < 0.01)
-        if (c) { setSelected(null); setSelectedFlag(null); setSelectedAmbient(null); setSelectedCluster(c); return }
+        if (c) { setSelected(null); setSelectedAmbient(null); setSelectedCluster(c); return }
       }
       // any ambient ship: fetch its info and show a panel
       const amb = [...near('world-dots'), ...near('world-arrows')].sort((a, b) => a.d - b.d)[0]
@@ -688,7 +595,7 @@ export default function LiveMap() {
     }
     map.on('click', onMapClick)
     return () => { map.off('click', onMapClick) }
-  }, [mapReady, positions, suggestions, clusters])
+  }, [mapReady, positions, clusters])
 
   useEffect(() => {
     const map = mapRef.current
@@ -710,8 +617,6 @@ export default function LiveMap() {
     } else if (selectedAmbient) {
       const live = world?.find((p) => p.mmsi === selectedAmbient.mmsi)
       sel = live ? [live.lon, live.lat] : [selectedAmbient.lon, selectedAmbient.lat]
-    } else if (selectedFlag && selectedFlag.lat != null && selectedFlag.lon != null) {
-      sel = [selectedFlag.lon, selectedFlag.lat]
     }
     const src = map.getSource('selection') as GeoJSONSource | undefined
     if (!src) return
@@ -726,9 +631,9 @@ export default function LiveMap() {
       map.setPaintProperty('selection-ring', 'circle-stroke-opacity', 0.6 + Math.sin(t) * 0.35)
     }, 60)
     return () => window.clearInterval(id)
-  }, [mapReady, selected, selectedAmbient, selectedFlag, positions, world])
+  }, [mapReady, selected, selectedAmbient, positions, world])
 
-  // score slider: hide watchlist/flagged ships below the chosen risk. Ambient
+  // score slider: hide watchlist ships below the chosen risk. Ambient
   // traffic (risk 0) always stays as context.
   useEffect(() => {
     const map = mapRef.current
@@ -737,24 +642,7 @@ export default function LiveMap() {
     map.setFilter('vessels-dots', ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 0], meets])
     map.setFilter('vessels-arrows', ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 1], meets])
     map.setFilter('vessels-halo', ['all', ['get', 'watchlist'], ['>', ['get', 'risk'], 0], meets])
-    map.setFilter('flagged-rings', meets)
   }, [mapReady, minRisk])
-
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapReady) return
-    ;(map.getSource('gaps') as GeoJSONSource)?.setData(
-      gapsToGeoJSON(showGaps && openGaps ? openGaps : []))
-  }, [mapReady, openGaps, showGaps])
-
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapReady || !suggestions) return
-    // suspects are opt-in: unverified behaviour flags stay off the map until
-    // the viewer flips the toggle (they're always in Suggestions)
-    ;(map.getSource('flagged') as GeoJSONSource)?.setData(
-      flaggedToGeoJSON(showSuspects ? suggestions : []))
-  }, [mapReady, suggestions, showSuspects])
 
   useEffect(() => {
     const map = mapRef.current
@@ -804,14 +692,14 @@ export default function LiveMap() {
   }, [selected])
 
   // Fetch and draw the selected vessel's track - for ANY selected ship
-  // (watchlist, ambient/world, or a flagged suggestion), since we now store
+  // (watchlist or ambient/world), since we now store
   // history for every ship. Ambient ships just started recording, so their
   // tail grows over time (1 stored position per minute).
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady) return
     const source = map.getSource('track') as GeoJSONSource
-    const mmsi = selected?.mmsi ?? selectedAmbient?.mmsi ?? selectedFlag?.mmsi
+    const mmsi = selected?.mmsi ?? selectedAmbient?.mmsi
     if (mmsi == null) {
       source?.setData({ type: 'FeatureCollection', features: [] })
       return
@@ -827,7 +715,7 @@ export default function LiveMap() {
         }] : [],
       })
     }).catch(() => source?.setData({ type: 'FeatureCollection', features: [] }))
-  }, [mapReady, selected, selectedAmbient, selectedFlag])
+  }, [mapReady, selected, selectedAmbient])
 
   return (
     <>
@@ -890,49 +778,6 @@ export default function LiveMap() {
           )}
           <FollowButton mmsi={selected.mmsi} followed={followed} onAdded={addFollowed} />
           <ShareButton mmsi={selected.mmsi} />
-        </aside>
-      )}
-
-      {selectedFlag && (
-        <aside className="vessel-panel">
-          <button className="close" onClick={() => setSelectedFlag(null)} aria-label="Close">✕</button>
-          <h2>{selectedFlag.name ?? selectedFlag.mmsi}</h2>
-          <span className="tag narco">risk {Math.round(selectedFlag.score)}</span>{' '}
-          <span className="tag shadow_fleet">flagged - not on watchlist</span>
-          <dl className="datagrid">
-            <dt>MMSI</dt><dd>{selectedFlag.mmsi}</dd>
-            {selectedFlag.imo && <><dt>IMO</dt><dd>{selectedFlag.imo}</dd></>}
-            {selectedFlag.last_seen && (
-              <><dt>Last seen</dt><dd>{new Date(selectedFlag.last_seen).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC</dd></>
-            )}
-          </dl>
-          <div className="panel-detail" style={{ marginTop: '0.8rem' }}>
-            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.4rem' }}>
-              Why it&apos;s flagged
-            </div>
-            <div style={{ display: 'grid', gap: '0.5rem' }}>
-              {dedupeEvents(selectedFlag.events).map((e) => {
-                const bits = detailBits(e.details as Record<string, unknown>)
-                return (
-                  <div key={e.rule} style={{ borderLeft: '2px solid var(--narco)', paddingLeft: '0.55rem' }}>
-                    <div style={{ fontSize: 13, color: 'var(--text)' }}>{ruleLabel(e.rule)}</div>
-                    {bits.length > 0 && (
-                      <div className="mono" style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: '0.15rem' }}>{bits.join(' · ')}</div>
-                    )}
-                    <div className="mono" style={{ fontSize: 11, color: 'var(--muted)', marginTop: '0.1rem' }}>
-                      +{Math.round(e.score)} · {new Date(e.ts).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-          <p style={{ marginTop: '0.8rem', fontSize: 12.5, display: 'flex', gap: '0.9rem', flexWrap: 'wrap' }}>
-            <a href="/suggestions" style={{ color: 'var(--watch-other)' }}>Review in Suggestions →</a>
-            <a href="/blog" style={{ color: 'var(--muted)' }}>What do these mean?</a>
-          </p>
-          <FollowButton mmsi={selectedFlag.mmsi} followed={followed} onAdded={addFollowed} />
-          <ShareButton mmsi={selectedFlag.mmsi} />
         </aside>
       )}
 
@@ -1014,16 +859,6 @@ export default function LiveMap() {
         <span className="risk-count">
           {positions ? positions.filter((p) => p.category && (p.risk_score ?? 0) >= minRisk).length : 0} watchlist ships shown
         </span>
-        <label className="suspect-toggle" title="Unverified behaviour flags - review them in Suggestions">
-          <input type="checkbox" checked={showSuspects}
-                 onChange={(e) => setShowSuspects(e.target.checked)} />
-          suspects
-        </label>
-        <label className="suspect-toggle" title="Red rings where a watched ship went dark (open AIS gaps)">
-          <input type="checkbox" checked={showGaps}
-                 onChange={(e) => setShowGaps(e.target.checked)} />
-          gaps
-        </label>
       </div>
 
       {/* on phones the two bottom panels start collapsed behind these chips
@@ -1066,8 +901,6 @@ export default function LiveMap() {
         <div><span className="swatch" style={{ background: COLORS.other }} />Behaviour flag (click ship for pattern)</div>
 
         <div className="legend-head">Markers</div>
-        <div><span className="swatch ring" style={{ borderColor: COLORS.shadow_fleet }} />Suspect, not yet watchlisted</div>
-        <div><span className="swatch ring" style={{ borderColor: GAP_RING }} />Went dark here (AIS gap)</div>
         <div><span className="swatch" style={{ background: COLORS.region }} />Ordinary traffic</div>
         <div className="legend-note">▲ underway (points where it is heading) · ● stopped · size = risk</div>
       </div>

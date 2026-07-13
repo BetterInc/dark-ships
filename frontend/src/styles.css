@@ -60,7 +60,6 @@ body {
 
 .instrument { color: var(--muted); }
 .instrument b { color: var(--text); font-weight: 600; margin-left: 0.4ch; }
-.instrument.alert b { color: var(--narco); }
 
 .live-dot {
   display: inline-block;
@@ -220,12 +219,6 @@ main { flex: 1; min-height: 0; position: relative; }
 .risk-slider label b { color: var(--text); font-family: var(--mono); }
 .risk-slider input[type=range] { accent-color: var(--shadow-fleet); }
 .risk-count { font-size: 11px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
-.suspect-toggle {
-  display: inline-flex; align-items: center; gap: 0.35rem;
-  font-size: 11px; color: var(--muted); font-family: var(--mono);
-  white-space: nowrap; cursor: pointer; user-select: none;
-}
-.suspect-toggle input { accent-color: var(--shadow-fleet); margin: 0; }
 
 .stat-num { font-family: var(--mono); font-size: 1.9rem; color: var(--text); font-variant-numeric: tabular-nums; }
 .stat-lab { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
@@ -703,13 +696,8 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
   .statusbar nav.open .nav-sep { width: auto; height: 1px; margin: 0.3rem 0; }
   .statusbar nav.open .nav-account { justify-content: space-between; }
 
-  /* risk/suspect/gap controls stay usable on phones, just tighter:
-     a slim wrapped pill directly under the search bar */
-  .risk-slider {
-    padding: 0.35rem 0.6rem;
-    gap: 0.25rem 0.7rem;
-  }
-  .risk-slider input[type=range] { min-width: 110px; }
+  /* the risk-filter pill is a desktop tool; on phones it covers the map */
+  .risk-slider { display: none; }
 
   /* search full-width; 16px stops iOS zoom-on-focus */
   .ship-search { left: 0.6rem; right: 0.6rem; width: auto; }
@@ -855,14 +843,7 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
 
   /* map overlays: viewport-bound instead of fixed desktop widths */
   .ship-search { width: calc(100vw - 2rem); }
-  .risk-slider {
-    top: 3.6rem; /* below the search box instead of colliding with it */
-    left: 1rem; right: 1rem;
-    transform: none;
-    width: auto; min-width: 0;
-    flex-wrap: wrap; gap: 0.4rem 0.8rem;
-    padding: 0.45rem 0.7rem;
-  }
+  .risk-slider { display: none; }
   .vessel-panel { width: calc(100vw - 2rem); max-height: 55%; }
   .legend {
     max-width: calc(100vw - 2rem);
