@@ -1,24 +1,28 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { usePolling } from './api/client'
 import { useAuth } from './auth/AuthContext'
 import RequireAuth from './auth/RequireAuth'
 import type { Vessel } from './api/types'
-import Admin from './pages/Admin'
-import Events from './pages/Events'
-import ForgotPassword from './pages/ForgotPassword'
-import Blog from './pages/Blog'
-import BlogPost from './pages/BlogPost'
-import Imagery from './pages/Imagery'
-import LiveMap from './pages/LiveMap'
-import Login from './pages/Login'
-import Monitor from './pages/Monitor'
-import Register from './pages/Register'
-import ResetPassword from './pages/ResetPassword'
-import Sources from './pages/Sources'
-import Suggestions from './pages/Suggestions'
-import VerifyEmail from './pages/VerifyEmail'
-import Watchlist from './pages/Watchlist'
+
+// Route components are lazy-loaded so each page ships as its own chunk. This
+// keeps MapLibre (imported only by LiveMap, ~800 kB) out of the shared bundle,
+// so Sources/Blog/auth pages load a small chunk instead of the whole app.
+const Admin = lazy(() => import('./pages/Admin'))
+const Events = lazy(() => import('./pages/Events'))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
+const Blog = lazy(() => import('./pages/Blog'))
+const BlogPost = lazy(() => import('./pages/BlogPost'))
+const Imagery = lazy(() => import('./pages/Imagery'))
+const LiveMap = lazy(() => import('./pages/LiveMap'))
+const Login = lazy(() => import('./pages/Login'))
+const Monitor = lazy(() => import('./pages/Monitor'))
+const Register = lazy(() => import('./pages/Register'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const Sources = lazy(() => import('./pages/Sources'))
+const Suggestions = lazy(() => import('./pages/Suggestions'))
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
+const Watchlist = lazy(() => import('./pages/Watchlist'))
 
 function utcClock(): string {
   return new Date().toISOString().slice(11, 19) + ' UTC'
@@ -108,6 +112,7 @@ export default function App() {
         </nav>
       </header>
       <main>
+        <Suspense fallback={<div className="route-loading">Loading…</div>}>
         <Routes>
           <Route path="/" element={<LiveMap />} />
           {/* shareable deep link to a vessel; same map, focused on the ship */}
@@ -131,6 +136,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify" element={<VerifyEmail />} />
         </Routes>
+        </Suspense>
       </main>
     </div>
   )
