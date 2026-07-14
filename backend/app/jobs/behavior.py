@@ -46,6 +46,9 @@ WEIGHTS = {
     "loitering": 30.0,
     "mmsi_collision": 45.0,
     "circle_spoofing": 40.0,
+    # Same crop-circle track but inside a known area-jamming zone: the ship is
+    # a jamming victim, not a self-spoofer, so a low corroboration weight only.
+    "gps_jamming_zone": 10.0,
     "identity_integrity": 30.0,
     "flag_hop": 35.0,
     "nav_status_lie": 30.0,
@@ -116,6 +119,24 @@ CIRCLE_MIN_SOG = 4.0
 CIRCLE_RADIUS_CV_MAX = 0.30    # low radial variance = circular
 CIRCLE_MIN_RADIUS_KM = 0.4     # bigger than an anchor swing
 CIRCLE_MAX_RADIUS_KM = 12.0
+
+# Known area GPS-jamming/spoofing zones (2026). A circular "crop-circle" track
+# inside one of these is almost always the ship being a VICTIM of ambient
+# military/state jamming, not deliberately spoofing itself - so we label it
+# distinctly and don't treat it as the vessel's own deception. Boxes are
+# (lat_min, lat_max, lon_min, lon_max); deliberately generous.
+GPS_JAMMING_ZONES = [
+    (24.0, 30.5, 47.0, 57.0),   # Persian Gulf / Strait of Hormuz
+    (30.0, 38.0, 26.0, 37.0),   # Eastern Mediterranean (incl. Cyprus/Levant)
+    (40.0, 41.5, 27.0, 30.0),   # Bosphorus / Sea of Marmara
+    (29.0, 33.5, 30.0, 35.0),   # Suez / Port Said / N. Sinai
+    (53.0, 60.5, 18.0, 30.0),   # Baltic (Kaliningrad/Gulf of Finland)
+]
+
+
+def _in_gps_jamming_zone(lat: float, lon: float) -> bool:
+    return any(la0 <= lat <= la1 and lo0 <= lon <= lo1
+               for la0, la1, lo0, lo1 in GPS_JAMMING_ZONES)
 
 LOITER_MAX_SOG = 2.0        # near-stationary
 LOITER_MIN_HOURS = 4.0      # sustained dwell
@@ -709,12 +730,20 @@ async def rule_circle_spoofing(session, now: datetime) -> list[RiskEvent]:
         net = haversine_km(pts[0].lat, pts[0].lon, pts[-1].lat, pts[-1].lon)
         if net > 2 * mean_r:
             continue  # actually went somewhere
-        if await _has_event(session, mmsi, "circle_spoofing", since):
+        # Discriminate victim from deceiver: a crop-circle track inside a known
+        # area-jamming zone (Hormuz/E-Med/Bosphorus/Suez/Baltic) is almost
+        # certainly the ship being jammed BY someone, not spoofing itself - a
+        # separate low-weight signal, not the hard-to-fake circle_spoofing flag.
+        in_zone = _in_gps_jamming_zone(lat_c, lon_c)
+        rule = "gps_jamming_zone" if in_zone else "circle_spoofing"
+        if await _has_event(session, mmsi, rule, since):
             continue
-        events.append(_event(mmsi, "circle_spoofing", radius_km=round(mean_r, 1),
-                             avg_sog=round(avg_sog, 1), lat=round(lat_c, 3), lon=round(lon_c, 3)))
-        logger.warning("Circle spoofing: %s claims %.0f kn but circles a %.1f km "
-                       "radius going nowhere", mmsi, avg_sog, mean_r)
+        events.append(_event(mmsi, rule, radius_km=round(mean_r, 1),
+                             avg_sog=round(avg_sog, 1), lat=round(lat_c, 3),
+                             lon=round(lon_c, 3), jamming_zone=in_zone))
+        logger.warning("%s: %s claims %.0f kn but circles a %.1f km radius going "
+                       "nowhere%s", rule, mmsi, avg_sog, mean_r,
+                       " (inside area-jamming zone)" if in_zone else "")
     return events
 
 
@@ -843,6 +872,7 @@ RULE_EXPLANATIONS = {
     "loitering": "loitered offshore in a trafficking corridor",
     "mmsi_collision": "one identity broadcasting from two places at once",
     "circle_spoofing": "broadcast a fake circular GPS track",
+    "gps_jamming_zone": "circular GPS track inside an area-jamming zone (likely a jamming victim)",
     "identity_integrity": "fabricated identity (invalid MMSI/IMO)",
     "flag_hop": "reflagged repeatedly (one hull, many MMSIs)",
     "nav_status_lie": "declared anchored while actually moving (often a stale crew setting)",
@@ -1104,25 +1134,43 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
                     mmsi, score, ", ".join(sorted(rules)))
 
 
+# (rule name, coroutine factory). Each runs isolated so one rule's failure
+# (a transient DB error, a corrupt details payload, an unexpected None) can't
+# abort the other 14 or the scoring/watchlist maintenance that follows.
+def _rule_plan(session, now):
+    return [
+        ("regional_gaps", lambda: rule_regional_gaps(session, now)),
+        ("identity_changes", lambda: rule_identity_changes(session)),
+        ("midsea_appearance", lambda: rule_midsea_appearance(session, now)),
+        ("impossible_jumps", lambda: rule_impossible_jumps(session, now)),
+        ("rendezvous", lambda: rule_rendezvous(session, now)),
+        ("oil_slick", lambda: rule_oil_slick_corroboration(session, now)),
+        ("draught_change", lambda: rule_draught_change(session, now)),
+        ("dark_association", lambda: rule_dark_association(session, now)),
+        ("loitering", lambda: rule_loitering(session, now)),
+        ("mmsi_collision", lambda: rule_mmsi_collision(session, now)),
+        ("circle_spoofing", lambda: rule_circle_spoofing(session, now)),
+        ("identity_integrity", lambda: rule_identity_integrity(session)),
+        ("flag_hopping", lambda: rule_flag_hopping(session)),
+        ("nav_status_lie", lambda: rule_nav_status_lie(session, now)),
+        ("risklist_matches", lambda: rule_risklist_matches(session)),
+    ]
+
+
 async def run_behavior_scan() -> None:
     now = datetime.now(timezone.utc)
     async with SessionLocal() as session:
         events: list[RiskEvent] = []
-        events += await rule_regional_gaps(session, now)
-        events += await rule_identity_changes(session)
-        events += await rule_midsea_appearance(session, now)
-        events += await rule_impossible_jumps(session, now)
-        events += await rule_rendezvous(session, now)
-        events += await rule_oil_slick_corroboration(session, now)
-        events += await rule_draught_change(session, now)
-        events += await rule_dark_association(session, now)
-        events += await rule_loitering(session, now)
-        events += await rule_mmsi_collision(session, now)
-        events += await rule_circle_spoofing(session, now)
-        events += await rule_identity_integrity(session)
-        events += await rule_flag_hopping(session)
-        events += await rule_nav_status_lie(session, now)
-        events += await rule_risklist_matches(session)
+        for name, run in _rule_plan(session, now):
+            try:
+                # SAVEPOINT per rule: a failing query poisons the transaction,
+                # so wrap each in a nested transaction. On failure we roll back
+                # only that rule's savepoint - earlier rules' work (e.g. the
+                # identity-change scored flags) survives and the scan continues.
+                async with session.begin_nested():
+                    events += await run()
+            except Exception:
+                logger.exception("Behaviour rule %s failed - skipping this run", name)
         session.add_all(events)
         await session.flush()
 

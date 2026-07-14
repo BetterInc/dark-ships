@@ -88,12 +88,16 @@ async def init_db() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    # Seatbelt: never run production on the insecure default JWT secret - it
-    # would let anyone forge a superuser token or a password-reset token.
-    if settings.environment == "production" and settings.auth_secret == "dev-insecure-change-me":
+    # Seatbelt: never run on the insecure default JWT secret outside an
+    # explicit dev/test environment - it would let anyone forge a superuser
+    # token or a password-reset token. Fails closed: `environment` defaults to
+    # "production", so forgetting to set ENVIRONMENT does NOT bypass this.
+    if settings.auth_secret == "dev-insecure-change-me" and \
+            settings.environment not in ("dev", "test", "local"):
         raise RuntimeError(
-            "AUTH_SECRET is unset (still the insecure default) while ENVIRONMENT=production. "
-            "Set a strong AUTH_SECRET before starting."
+            f"AUTH_SECRET is unset (still the insecure default) with "
+            f"ENVIRONMENT={settings.environment!r}. Set a strong AUTH_SECRET, "
+            f"or set ENVIRONMENT=dev for local development."
         )
     tasks: list[asyncio.Task] = []
     scheduler: AsyncIOScheduler | None = None
@@ -239,10 +243,19 @@ _RL_MESSAGE = {"detail": "Too many requests. Please wait a moment and try again.
 
 
 def _client_ip(request: Request) -> str:
-    # behind nginx ingress: first hop of X-Forwarded-For is the real client
+    # Rate-limit key: use the RIGHTMOST X-Forwarded-For hop, i.e. the address
+    # our own ingress appended = the peer that actually connected to it. The
+    # LEFTMOST entry is fully client-controlled, so keying off it lets an
+    # attacker rotate a fake IP per request and defeat every per-IP limit
+    # (login/register/forgot-password throttles). A client can prepend fake
+    # hops but cannot forge the one infrastructure adds last.
+    # NOTE: if a trusted CDN (e.g. Cloudflare) is ever put in front of the API,
+    # switch to its verified client-IP header instead of XFF.
     fwd = request.headers.get("x-forwarded-for", "")
     if fwd:
-        return fwd.split(",")[0].strip()
+        hops = [h.strip() for h in fwd.split(",") if h.strip()]
+        if hops:
+            return hops[-1]
     return request.client.host if request.client else "unknown"
 
 

@@ -77,6 +77,7 @@ PATTERN_LABELS = {
     "loitering": "loitering in a trafficking corridor",
     "mmsi_collision": "one identity in two places",
     "circle_spoofing": "GPS circle-spoofing",
+    "gps_jamming_zone": "GPS jamming zone (likely victim)",
     "identity_integrity": "fabricated identity (bad MMSI/IMO)",
     "flag_hop": "reflagged (one IMO, many MMSIs)",
     "nav_status_lie": "claims anchored while moving",

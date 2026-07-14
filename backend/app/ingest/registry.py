@@ -187,13 +187,28 @@ class RegistryTracker:
                                 mmsi, old_draught, draught)
                 entry["draught"] = draught
 
+            # ship_type/destination: only overwrite when this message actually
+            # carries them. A Class B StaticDataReport alternates part A (name,
+            # NO ShipType) and part B (ShipType); writing the None from part A
+            # would flap a known ship_type to NULL every cycle and silently
+            # break every type-gated rule. Persist in `entry` and only include
+            # the key in the upsert when we have a value (same as draught).
+            if ship_type is not None:
+                entry["ship_type"] = ship_type
+            dest = (destination or "").strip() or None
+            if dest is not None:
+                entry["destination"] = dest
+
             up = self._upserts.setdefault(mmsi, {"mmsi": mmsi})
             up.update({
                 "name": entry.get("name"), "imo": entry.get("imo"),
-                "callsign": entry.get("callsign"), "ship_type": ship_type,
-                "destination": (destination or "").strip() or None,
+                "callsign": entry.get("callsign"),
                 "last_seen": ts, "static_updated_at": ts,
             })
+            if entry.get("ship_type") is not None:
+                up["ship_type"] = entry["ship_type"]
+            if entry.get("destination") is not None:
+                up["destination"] = entry["destination"]
             if valid_draught(entry.get("draught")):
                 up["draught"] = entry["draught"]
             up.setdefault("first_seen", ts)

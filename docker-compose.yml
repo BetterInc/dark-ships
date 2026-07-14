@@ -65,6 +65,9 @@ services:
       # Local = one combined process. In prod, split into RUN_MODE=web (scales)
       # + a single RUN_MODE=worker replica for ingest/scheduler.
       RUN_MODE: all
+      # Opt out of the fail-closed auth_secret seatbelt (config defaults to
+      # ENVIRONMENT=production so a forgotten prod value can't ship insecure).
+      ENVIRONMENT: dev
     ports:
       - "8000:8000"
     volumes:

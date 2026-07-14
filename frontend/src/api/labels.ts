@@ -14,6 +14,7 @@ export const RULE_LABELS: Record<string, string> = {
   loitering: 'loitering offshore in a trafficking corridor',
   mmsi_collision: 'one identity broadcasting from two places',
   circle_spoofing: 'GPS circle-spoofing (fake track)',
+  gps_jamming_zone: 'circular track in an area-jamming zone (likely victim)',
   identity_integrity: 'fabricated identity (bad MMSI/IMO)',
   flag_hop: 'reflagged (one IMO, many MMSIs)',
   nav_status_lie: 'claims anchored while moving',
@@ -47,8 +48,8 @@ export function ruleLabel(rule: string): string {
 const TYPE_BUCKETS: Record<string, string[]> = {
   dark: ['regional_gap', 'gfw_ais_gap'],
   sts: ['rendezvous', 'gfw_encounter', 'draught_change', 'oil_slick', 'dark_association'],
-  spoof: ['impossible_jump', 'circle_spoofing', 'mmsi_collision', 'identity_change',
-    'identity_integrity', 'flag_hop'],
+  spoof: ['impossible_jump', 'circle_spoofing', 'gps_jamming_zone', 'mmsi_collision',
+    'identity_change', 'identity_integrity', 'flag_hop'],
   fishing: ['risklist_iuu', 'risklist_eu_iuu'],
 }
 

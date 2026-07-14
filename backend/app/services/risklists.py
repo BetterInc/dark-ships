@@ -90,12 +90,7 @@ async def import_uk() -> int:
     entries = [RiskListEntry(source="uk", imo=imo, name=v["name"], flag=v["flag"],
                              program=v["program"], imported_at=now)
                for imo, v in best.items()]
-    async with SessionLocal() as session:
-        await session.execute(delete(RiskListEntry).where(RiskListEntry.source == "uk"))
-        session.add_all(entries)
-        await session.commit()
-    logger.info("UK import: %d vessels", len(entries))
-    return len(entries)
+    return await _replace_source("uk", entries)
 
 
 def _field(value: str) -> str | None:
@@ -137,13 +132,7 @@ async def import_ofac() -> int:
             imported_at=now,
         ))
 
-    async with SessionLocal() as session:
-        await session.execute(delete(RiskListEntry).where(RiskListEntry.source == "ofac"))
-        session.add_all(entries)
-        await session.commit()
-    with_imo = sum(1 for e in entries if e.imo)
-    logger.info("OFAC import: %d vessels (%d with IMO)", len(entries), with_imo)
-    return len(entries)
+    return await _replace_source("ofac", entries)
 
 
 OS_URL = "https://data.opensanctions.org/datasets/latest/{slug}/entities.ftm.json"
@@ -199,12 +188,7 @@ async def import_opensanctions_vessels(source: str, slug: str, program: str) -> 
             flag=(flag or "")[:64] or None, program=program, imported_at=now,
         ))
 
-    async with SessionLocal() as session:
-        await session.execute(delete(RiskListEntry).where(RiskListEntry.source == source))
-        session.add_all(entries)
-        await session.commit()
-    logger.info("%s import: %d vessels", source, len(entries))
-    return len(entries)
+    return await _replace_source(source, entries)
 
 
 # EU Annex XLII port-ban shadow-fleet list, published as CSV by the Danish
@@ -250,12 +234,7 @@ async def import_eu() -> int:
             program="EU-Annex-XLII", imported_at=now,
         ))
 
-    async with SessionLocal() as session:
-        await session.execute(delete(RiskListEntry).where(RiskListEntry.source == "eu"))
-        session.add_all(entries)
-        await session.commit()
-    logger.info("EU import: %d vessels", len(entries))
-    return len(entries)
+    return await _replace_source("eu", entries)
 
 
 import html as _html
@@ -385,12 +364,7 @@ async def import_iuu() -> int:
         seen[imo] = RiskListEntry(source="iuu", imo=imo, name=name or None,
                                   program="Combined-IUU-RFMO", imported_at=now)
 
-    async with SessionLocal() as session:
-        await session.execute(delete(RiskListEntry).where(RiskListEntry.source == "iuu"))
-        session.add_all(seen.values())
-        await session.commit()
-    logger.info("IUU import: %d vessels with IMO", len(seen))
-    return len(seen)
+    return await _replace_source("iuu", list(seen.values()))
 
 
 # EU "Union IUU vessel list", published as an EU Implementing Regulation on
@@ -476,12 +450,7 @@ async def import_eu_iuu() -> int:
     if not seen:
         logger.warning("EU IUU list: no vessels parsed (CELEX %s) - layout changed?", celex)
         return 0
-    async with SessionLocal() as session:
-        await session.execute(delete(RiskListEntry).where(RiskListEntry.source == "eu_iuu"))
-        session.add_all(seen.values())
-        await session.commit()
-    logger.info("EU IUU import: %d vessels with IMO (CELEX %s)", len(seen), celex)
-    return len(seen)
+    return await _replace_source("eu_iuu", list(seen.values()))
 
 
 # --- Direct-from-government importers (2026-07-13) --------------------------

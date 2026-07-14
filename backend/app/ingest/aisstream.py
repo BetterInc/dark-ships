@@ -74,6 +74,21 @@ def _clean(value: float | None, not_available: float) -> float | None:
     return value
 
 
+# Above this the AIS speed-over-ground field is a garbled reading, not a real
+# speed (the fastest ferries do ~45 kn; a tanker reporting 75 kn is corrupt).
+# Null the SOG but keep the position, so a junk speed can't drive impossible-
+# jump / underway checks or show 75 kn in the UI. (102.3 is the field's own
+# "not available" sentinel, handled by _clean.)
+SOG_MAX_PLAUSIBLE_KN = 60.0
+
+
+def _clean_sog(value: float | None) -> float | None:
+    v = _clean(value, 102.3)
+    if v is not None and (v < 0 or v > SOG_MAX_PLAUSIBLE_KN):
+        return None
+    return v
+
+
 class PositionBuffer:
     """Batches inserts so a busy region feed doesn't hit Postgres row by row.
     Also writes a per-minute ingest heartbeat while messages are flowing, so
@@ -256,7 +271,7 @@ class AisStreamConnection:
             if self.world_mode:
                 world_snapshot[mmsi] = {
                     "mmsi": mmsi, "ts": ts, "lat": lat, "lon": lon,
-                    "sog": _clean(report.get("Sog"), 102.3),
+                    "sog": _clean_sog(report.get("Sog")),
                     "cog": _clean(report.get("Cog"), 360.0),
                     "ship_name": ship_name,
                 }
@@ -281,7 +296,7 @@ class AisStreamConnection:
                 "ts": ts,
                 "lat": lat,
                 "lon": lon,
-                "sog": _clean(report.get("Sog"), 102.3),
+                "sog": _clean_sog(report.get("Sog")),
                 "cog": _clean(report.get("Cog"), 360.0),
                 "heading": _clean(report.get("TrueHeading"), 511),
                 "nav_status": report.get("NavigationalStatus"),

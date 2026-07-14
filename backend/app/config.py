@@ -92,10 +92,11 @@ class Settings(BaseSettings):
         return bool(self.s3_endpoint and self.s3_bucket
                     and self.s3_access_key_id and self.s3_secret_access_key)
 
-    # Deployment environment. When "production", startup refuses to run with the
-    # insecure default auth_secret (see main.py) so a forgotten AUTH_SECRET can
-    # never ship a forgeable-JWT deploy.
-    environment: str = "dev"  # dev | production
+    # Deployment environment. Defaults to "production" so the auth_secret
+    # seatbelt (main.py) FAILS CLOSED: a deploy that forgets to set ENVIRONMENT
+    # still refuses to boot on the insecure default secret. Local/dev must opt
+    # out explicitly (ENVIRONMENT=dev, set in docker-compose).
+    environment: str = "production"  # production | dev | test
 
     # Rate-limit counter store. "async+memory://" is per-pod (fine locally / one
     # replica). Point at the cluster cache to share limits across web replicas,
