@@ -26,8 +26,9 @@ from ..services.sentinelhub import fetch_s1_chip
 logger = logging.getLogger(__name__)
 
 # Per run: keeps a 6-hourly job well inside the CDSE free-tier processing
-# quota even with a large backlog; the backlog drains across runs.
-BATCH_SIZE = 40
+# quota (a 300px float32 chip is <1 PU of the 30k/month) even with a large
+# backlog; the backlog drains across runs.
+BATCH_SIZE = 150
 # Reference pass for persistent-target suppression: far enough back that a
 # normal port call / short anchorage doesn't span both passes, close enough
 # that a S1 acquisition of the spot exists.
