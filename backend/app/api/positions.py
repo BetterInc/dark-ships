@@ -294,25 +294,29 @@ async def clusters(session: AsyncSession = Depends(get_session)):
     from ..geo import haversine_km
 
     now = datetime.now(timezone.utc)
-    since = now - timedelta(hours=6)
-    # Only genuinely list-flagged ships count as "shadow fleet" here: exclude the
-    # 'other' category (behaviour-only + MoU-detention-only), which is not a
-    # sanctions/shadow-fleet listing and would otherwise inflate the anchorage
-    # counts with ordinary flagged traffic. (We also no longer tag a 'watchlist'
-    # position source - every ship is recorded region/world - so scope by MMSI.)
-    watch_mmsis = select(Vessel.mmsi).where(
-        Vessel.active.is_(True), Vessel.category != "other"
-    ).scalar_subquery()
-    latest = (
-        select(Position).where(Position.ts >= since, Position.mmsi.in_(watch_mmsis))
-        .distinct(Position.mmsi).order_by(Position.mmsi, Position.ts.desc()).subquery()
-    )
+    since = now - timedelta(hours=24)
+    # Same 24h latest-position snapshot the map draws, so the counts here match
+    # the dots the viewer can see in the area (the old 6h Position-scan silently
+    # dropped ships that went quiet while anchored - shadow fleet behaviour).
     rows = (await session.execute(
-        select(latest, Vessel.name.label("vessel_name"), Vessel.category)
-        .join(Vessel, (Vessel.mmsi == latest.c.mmsi) & Vessel.active.is_(True))
+        select(LatestPosition, Vessel.name.label("vessel_name"), Vessel.category)
+        .join(Vessel, (Vessel.mmsi == LatestPosition.mmsi) & Vessel.active.is_(True))
+        .where(LatestPosition.ts >= since)
     )).all()
-    # anchored ships only
-    ships = [dict(r._mapping) for r in rows if (r._mapping["sog"] or 99) < 2.0]
+    flagged = [{
+        "mmsi": r.LatestPosition.mmsi, "lat": r.LatestPosition.lat,
+        "lon": r.LatestPosition.lon, "sog": r.LatestPosition.sog,
+        "vessel_name": r.vessel_name, "category": r.category,
+    } for r in rows]
+    # Cluster membership stays strict: anchored, genuinely list-flagged ships.
+    # The 'other' category (behaviour-only + MoU-detention-only) is not a
+    # sanctions/shadow-fleet listing and would inflate the anchorage counts -
+    # but those ships still show up in the per-cluster "in the area" tally below.
+    # NB: sog == 0.0 IS anchored - `sog or 99` treated a dead stop as unknown
+    # and silently dropped most of every anchorage from the count.
+    ships = [s for s in flagged
+             if s["category"] != "other"
+             and s["sog"] is not None and s["sog"] < 2.0]
 
     # Which of these are on an actual GOVERNMENT sanctions list (vs only on a
     # shadow-fleet watchlist like UANI/GUR) - so the panel can honestly say
@@ -333,7 +337,7 @@ async def clusters(session: AsyncSession = Depends(get_session)):
     # several fragments. Ships link if within 12 km of ANY cluster member, so
     # the Port Said or Singapore anchorage merges into a single group.
     unclustered = list(ships)
-    clusters = []
+    groups = []
     while unclustered:
         group = [unclustered.pop()]
         changed = True
@@ -348,15 +352,61 @@ async def clusters(session: AsyncSession = Depends(get_session)):
                     rest.append(s)
             unclustered = rest
         if len(group) >= 3:
-            clat = sum(s["lat"] for s in group) / len(group)
-            clon = sum(s["lon"] for s in group) / len(group)
-            clusters.append({
-                "lat": round(clat, 3), "lon": round(clon, 3), "count": len(group),
-                "sanctioned": sum(1 for s in group if s["mmsi"] in sanctioned),
-                "members": sorted(
-                    ({"mmsi": s["mmsi"], "name": s["vessel_name"], "category": s["category"]}
-                     for s in group), key=lambda m: m["name"] or ""),
-            })
+            groups.append(group)
+
+    # Recent behaviour alerts fired by any grouped ship (rendezvous, went dark,
+    # draught change, ...) - the activity that makes a gathering interesting.
+    # Static risklist_* memberships are excluded: being on a list isn't an event.
+    member_mmsis = [s["mmsi"] for g in groups for s in g]
+    events_by_mmsi: dict[int, list[str]] = {}
+    if member_mmsis:
+        for m, rule in await session.execute(
+            select(RiskEvent.mmsi, RiskEvent.rule).where(
+                RiskEvent.mmsi.in_(member_mmsis),
+                RiskEvent.ts >= now - timedelta(hours=72),
+                RiskEvent.rule.notlike("risklist_%"),
+            )
+        ):
+            events_by_mmsi.setdefault(m, []).append(rule)
+
+    def region_of(lat: float, lon: float):
+        """The monitored region a point falls in - names the place and says
+        whether anchoring is normal there (sts) or suspicious (transit)."""
+        for r in get_settings().ais_regions:
+            (lat0, lon0), (lat1, lon1) = r.bbox
+            if lat0 <= lat <= lat1 and lon0 <= lon <= lon1:
+                return r
+        return None
+
+    clusters = []
+    for group in groups:
+        clat = sum(s["lat"] for s in group) / len(group)
+        clon = sum(s["lon"] for s in group) / len(group)
+        member_set = {s["mmsi"] for s in group}
+        # every other flagged ship (any category, moving or not) within the
+        # cluster radius of a member: the honest "in the area" tally
+        nearby = sum(
+            1 for f in flagged if f["mmsi"] not in member_set and any(
+                haversine_km(g["lat"], g["lon"], f["lat"], f["lon"]) <= 12.0 for g in group))
+        alert_counts: dict[str, int] = {}
+        for s in group:
+            for rule in events_by_mmsi.get(s["mmsi"], []):
+                label = PATTERN_LABELS.get(rule, rule)
+                alert_counts[label] = alert_counts.get(label, 0) + 1
+        region = region_of(clat, clon)
+        clusters.append({
+            "lat": round(clat, 3), "lon": round(clon, 3), "count": len(group),
+            "nearby": nearby,
+            "sanctioned": sum(1 for s in group if s["mmsi"] in sanctioned),
+            "region": region.name if region else None,
+            "region_kind": region.kind if region else None,
+            "recent_alerts": sorted(
+                ({"pattern": p, "count": n} for p, n in alert_counts.items()),
+                key=lambda a: -a["count"]),
+            "members": sorted(
+                ({"mmsi": s["mmsi"], "name": s["vessel_name"], "category": s["category"]}
+                 for s in group), key=lambda m: m["name"] or ""),
+        })
     clusters.sort(key=lambda c: -c["count"])
     return clusters
 

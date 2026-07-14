@@ -98,7 +98,11 @@ export interface Cluster {
   lat: number
   lon: number
   count: number
+  nearby: number      // other flagged ships within the cluster radius (any category)
   sanctioned: number  // how many are on an actual government sanctions list
+  region: string | null       // monitored region the centre falls in, if any
+  region_kind: string | null  // "sts" (anchoring normal) | "transit" (dwelling suspicious)
+  recent_alerts: { pattern: string; count: number }[]  // behaviour alerts fired here (72h)
   members: { mmsi: number; name: string | null; category: Category | null }[]
 }
 

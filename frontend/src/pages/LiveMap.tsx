@@ -82,6 +82,58 @@ function ShareButton({ mmsi }: { mmsi: number }) {
   )
 }
 
+// Shared vessel-panel sections, so the live-feed panel and the ambient /
+// deep-link panel render watchlist evidence identically and can't drift.
+function PatternTags({ patterns }: { patterns: string[] }) {
+  if (patterns.length === 0) return null
+  return (
+    <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
+      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.35rem' }}>
+        Detected pattern{patterns.length > 1 ? 's' : ''}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+        {patterns.map((p) => (
+          <span key={p} className={`tag ${p.includes('list') || p.includes('ban') || p.includes('detention') ? 'shadow_fleet' : 'open'}`}>{p}</span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function WatchNotes({ notes }: { notes: string | null | undefined }) {
+  if (!notes) return null
+  return (
+    <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
+      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.3rem' }}>
+        Why it&apos;s watched
+      </div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text)' }}>{notes}</div>
+    </div>
+  )
+}
+
+function SatChecks({ checks }: { checks: PositionCheck[] }) {
+  if (checks.length === 0) return null
+  return (
+    <div className="panel-detail" style={{ marginTop: '0.9rem', borderTop: '1px dashed var(--line)', paddingTop: '0.6rem' }}>
+      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.4rem' }}>
+        Satellite cross-checks - claimed position captured
+      </div>
+      {checks.slice(0, 5).map((c) => (
+        <div key={c.id} style={{ fontSize: 12, marginBottom: '0.45rem' }} className="mono">
+          {c.source} · {new Date(c.acquired_at).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC
+          · Δ{c.delta_minutes.toFixed(0)} min{' '}
+          {c.browser_url && (
+            <a href={c.browser_url} target="_blank" rel="noreferrer" style={{ color: 'var(--watch-other)' }}>
+              verify hull →
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // Set of mmsis already on the logged-in user's watchlist, fetched once so
 // followed ships show a done state instead of an add button.
 function useFollowed(): { followed: Set<number>; addFollowed: (mmsi: number) => void } {
@@ -150,10 +202,23 @@ interface AmbientInfo {
   on_watchlist: boolean
   category: string | null
   risk_score: number | null
-  lat: number
-  lon: number
-  sog: number
-  bearing: number
+  notes: string | null
+  patterns: string[]
+  // last position actually received for this ship, however old (never guessed)
+  last_pos: {
+    ts: string
+    lat: number
+    lon: number
+    sog: number | null
+    cog: number | null
+    heading: number | null
+    source: string
+  } | null
+  // live values when the panel was opened from a map click; null when unknown
+  lat: number | null
+  lon: number | null
+  sog: number | null
+  bearing: number | null
 }
 
 // Build a small triangle icon (pointing "up" = north) for each category, so
@@ -275,7 +340,12 @@ export default function LiveMap() {
     }
     api<Omit<AmbientInfo, 'lat' | 'lon' | 'sog' | 'bearing'>>(`/vessels/${hit.mmsi}/info`)
       .then((info) => { setSelected(null); setSelectedCluster(null)
-        setSelectedAmbient({ ...info, lat: hit.lat ?? 0, lon: hit.lon ?? 0, sog: 0, bearing: 0 }) })
+        // only real received values - a missing position/speed stays unknown
+        setSelectedAmbient({ ...info,
+          lat: hit.lat ?? info.last_pos?.lat ?? null,
+          lon: hit.lon ?? info.last_pos?.lon ?? null,
+          sog: info.last_pos?.sog ?? null,
+          bearing: info.last_pos?.cog ?? null }) })
       .catch(() => {})
   }
 
@@ -303,19 +373,40 @@ export default function LiveMap() {
   const { data: world } = usePolling<WorldPosition[]>('/positions/world', 120_000)
   const { data: clusters } = usePolling<Cluster[]>('/clusters', 60_000)
 
-  // Shareable deep link: on first load, focus the ship named in ?ship=<mmsi>.
+  // Shareable deep link: on first load, focus the ship named in /ship/<mmsi>.
   // Reads the value captured at mount, so the URL-sync effect below can't race
-  // it away before the map is ready.
+  // it away before the map is ready. Waits for the first /positions/latest
+  // poll so ships in the live feed open the rich watchlist panel (same as a
+  // marker click) instead of falling back to the bare info panel.
   useEffect(() => {
     if (!mapReady || deepLinked.current) return
     const raw = initialShip.current
     if (!raw) return
     const mmsi = Number(raw)
-    if (!Number.isFinite(mmsi) || mmsi <= 0) return
-    deepLinked.current = true
-    selectByMmsi(mmsi)
+    if (!Number.isFinite(mmsi) || mmsi <= 0) {
+      deepLinked.current = true  // consume bad links so URL sync isn't blocked
+      return
+    }
+    // the user picked a ship/cluster before the feed loaded - their choice wins
+    if (selected || selectedAmbient || selectedCluster) {
+      deepLinked.current = true
+      return
+    }
+    if (positions) {
+      deepLinked.current = true
+      selectByMmsi(mmsi)
+      return
+    }
+    // feed slow or erroring: still resolve the link via search/info after a
+    // grace period, rather than holding it hostage to the 30s poll
+    const t = window.setTimeout(() => {
+      if (deepLinked.current) return
+      deepLinked.current = true
+      selectByMmsi(mmsi)
+    }, 8000)
+    return () => window.clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mapReady])
+  }, [mapReady, positions, selected, selectedAmbient, selectedCluster])
 
   // Keep the address bar at /ship/<mmsi> for the open panel, so the URL itself
   // is the clean shareable link and previews can resolve the vessel.
@@ -589,7 +680,8 @@ export default function LiveMap() {
             clearAll(); setSelected(null)
             const name = info.name ?? (liveName && liveName !== String(mmsi) ? liveName : null)
             setSelectedAmbient({ ...info, name, lat: coords[1], lon: coords[0],
-              sog: amb.f.properties?.sog ?? 0, bearing: amb.f.properties?.bearing ?? 0 })
+              sog: (amb.f.properties?.sog as number | undefined) ?? null,
+              bearing: (amb.f.properties?.bearing as number | undefined) ?? null })
           }).catch(() => {})
       }
     }
@@ -616,7 +708,10 @@ export default function LiveMap() {
       sel = live ? [live.lon, live.lat] : [selected.lon, selected.lat]
     } else if (selectedAmbient) {
       const live = world?.find((p) => p.mmsi === selectedAmbient.mmsi)
-      sel = live ? [live.lon, live.lat] : [selectedAmbient.lon, selectedAmbient.lat]
+      if (live) sel = [live.lon, live.lat]
+      else if (selectedAmbient.lat != null && selectedAmbient.lon != null) {
+        sel = [selectedAmbient.lon, selectedAmbient.lat]
+      }
     }
     const src = map.getSource('selection') as GeoJSONSource | undefined
     if (!src) return
@@ -682,14 +777,19 @@ export default function LiveMap() {
     })
   }, [mapReady, clusters])
 
-  // Satellite cross-checks for the selected watchlist vessel
+  // Satellite cross-checks for the selected watchlist vessel - whichever
+  // panel it opened in (live feed or ambient/deep-link)
+  const checksMmsi = selected?.category ? selected.mmsi
+    : selectedAmbient?.on_watchlist ? selectedAmbient.mmsi : null
   useEffect(() => {
     setPosChecks([])
-    if (!selected?.category) return
-    api<PositionCheck[]>(`/vessels/${selected.mmsi}/position-checks`)
-      .then(setPosChecks)
-      .catch(() => setPosChecks([]))
-  }, [selected])
+    if (checksMmsi == null) return
+    let cancelled = false
+    api<PositionCheck[]>(`/vessels/${checksMmsi}/position-checks`)
+      .then((c) => { if (!cancelled) setPosChecks(c) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [checksMmsi])
 
   // Fetch and draw the selected vessel's track - for ANY selected ship
   // (watchlist or ambient/world), since we now store
@@ -738,44 +838,9 @@ export default function LiveMap() {
               <><dt>Risk score</dt><dd>{Math.round(selected.risk_score)}</dd></>
             )}
           </dl>
-          {(selected.patterns?.length ?? 0) > 0 && (
-            <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
-              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.35rem' }}>
-                Detected pattern{(selected.patterns?.length ?? 0) > 1 ? 's' : ''}
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
-                {(selected.patterns ?? []).map((p) => (
-                  <span key={p} className={`tag ${p.includes('list') || p.includes('ban') || p.includes('detention') ? 'shadow_fleet' : 'open'}`}>{p}</span>
-                ))}
-              </div>
-            </div>
-          )}
-          {selected.notes && (
-            <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
-              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.3rem' }}>
-                Why it&apos;s watched
-              </div>
-              <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text)' }}>{selected.notes}</div>
-            </div>
-          )}
-          {posChecks.length > 0 && (
-            <div className="panel-detail" style={{ marginTop: '0.9rem', borderTop: '1px dashed var(--line)', paddingTop: '0.6rem' }}>
-              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.4rem' }}>
-                Satellite cross-checks - claimed position captured
-              </div>
-              {posChecks.slice(0, 5).map((c) => (
-                <div key={c.id} style={{ fontSize: 12, marginBottom: '0.45rem' }} className="mono">
-                  {c.source} · {new Date(c.acquired_at).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC
-                  · Δ{c.delta_minutes.toFixed(0)} min{' '}
-                  {c.browser_url && (
-                    <a href={c.browser_url} target="_blank" rel="noreferrer" style={{ color: 'var(--watch-other)' }}>
-                      verify hull →
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          <PatternTags patterns={selected.patterns ?? []} />
+          <WatchNotes notes={selected.notes} />
+          <SatChecks checks={posChecks} />
           <FollowButton mmsi={selected.mmsi} followed={followed} onAdded={addFollowed} />
           <ShareButton mmsi={selected.mmsi} />
         </aside>
@@ -785,17 +850,31 @@ export default function LiveMap() {
         <aside className="vessel-panel">
           <button className="close" onClick={() => setSelectedAmbient(null)} aria-label="Close">✕</button>
           <h2>{selectedAmbient.name ?? selectedAmbient.mmsi}</h2>
-          <span className="tag closed">{selectedAmbient.on_watchlist ? 'on watchlist' : 'ordinary traffic'}</span>
+          {selectedAmbient.category
+            ? <span className={`tag ${selectedAmbient.category}`}>{CATEGORY_LABELS[selectedAmbient.category] ?? selectedAmbient.category}</span>
+            : <span className="tag closed">{selectedAmbient.on_watchlist ? 'on watchlist' : 'ordinary traffic'}</span>}
           <dl className="datagrid">
             <dt>MMSI</dt><dd>{selectedAmbient.mmsi}</dd>
             {selectedAmbient.imo && <><dt>IMO</dt><dd>{selectedAmbient.imo}</dd></>}
             {selectedAmbient.ship_type && <><dt>Type</dt><dd>{selectedAmbient.ship_type}</dd></>}
             {selectedAmbient.flag && <><dt>Flag</dt><dd>{selectedAmbient.flag}</dd></>}
             {selectedAmbient.destination && <><dt>Destination</dt><dd>{selectedAmbient.destination}</dd></>}
-            <dt>Position</dt><dd>{selectedAmbient.lat.toFixed(4)}, {selectedAmbient.lon.toFixed(4)}</dd>
-            <dt>Speed</dt><dd>{selectedAmbient.sog.toFixed(1)} kn</dd>
-            <dt>Course</dt><dd>{selectedAmbient.bearing.toFixed(0)}°</dd>
+            {selectedAmbient.lat != null && selectedAmbient.lon != null && (
+              <><dt>Position</dt><dd>{selectedAmbient.lat.toFixed(4)}, {selectedAmbient.lon.toFixed(4)}</dd></>
+            )}
+            {selectedAmbient.sog != null && <><dt>Speed</dt><dd>{selectedAmbient.sog.toFixed(1)} kn</dd></>}
+            {selectedAmbient.bearing != null && <><dt>Course</dt><dd>{selectedAmbient.bearing.toFixed(0)}°</dd></>}
+            {selectedAmbient.last_pos && (
+              <><dt>Last seen</dt><dd>{new Date(selectedAmbient.last_pos.ts).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC</dd>
+              <dt>Source</dt><dd>{selectedAmbient.last_pos.source}</dd></>
+            )}
+            {selectedAmbient.risk_score != null && selectedAmbient.risk_score > 0 && (
+              <><dt>Risk score</dt><dd>{Math.round(selectedAmbient.risk_score)}</dd></>
+            )}
           </dl>
+          <PatternTags patterns={selectedAmbient.patterns ?? []} />
+          <WatchNotes notes={selectedAmbient.notes} />
+          <SatChecks checks={posChecks} />
           {!selectedAmbient.on_watchlist && (
             <p style={{ marginTop: '0.7rem', fontSize: 12, color: 'var(--muted)' }}>
               Not flagged - no sanctions match or suspicious pattern detected. It only
@@ -817,9 +896,39 @@ export default function LiveMap() {
             {' · '}{selectedCluster.count - selectedCluster.sanctioned} on shadow-fleet lists
           </div>
           <dl className="datagrid">
+            {selectedCluster.region && <><dt>Where</dt><dd>{selectedCluster.region}</dd></>}
             <dt>Centre</dt><dd>{selectedCluster.lat.toFixed(3)}, {selectedCluster.lon.toFixed(3)}</dd>
-            <dt>Ships</dt><dd>{selectedCluster.count}</dd>
+            <dt>Anchored</dt><dd>{selectedCluster.count}</dd>
+            {selectedCluster.nearby > 0 && (
+              <><dt>In the area</dt><dd>≈{selectedCluster.count + selectedCluster.nearby} flagged ships</dd></>
+            )}
           </dl>
+          <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.3rem' }}>
+              Why ships meet here
+            </div>
+            <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text)' }}>
+              {selectedCluster.region_kind === 'sts'
+                ? 'This is a known anchoring and ship-to-ship transfer zone: tankers wait here for orders, transfer cargo between hulls, and re-document its origin.'
+                : selectedCluster.region_kind === 'transit'
+                  ? 'This is a transit corridor, not a normal anchorage - several flagged ships holding position together here usually means waiting for a rendezvous or orders.'
+                  : 'Open water outside our monitored regions - several flagged ships holding position together is itself the ship-to-ship staging signature.'}
+            </div>
+          </div>
+          {selectedCluster.recent_alerts.length > 0 && (
+            <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
+              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.35rem' }}>
+                Alerts here - last 72h
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                {selectedCluster.recent_alerts.map((a) => (
+                  <span key={a.pattern} className="tag open">
+                    {a.pattern}{a.count > 1 ? ` ×${a.count}` : ''}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ marginTop: '0.7rem' }}>
             <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.35rem' }}>
               Members
@@ -827,7 +936,7 @@ export default function LiveMap() {
             <div style={{ maxHeight: 260, overflowY: 'auto', display: 'grid', gap: '0.25rem' }}>
               {selectedCluster.members.map((m) => (
                 <button key={m.mmsi} className="cluster-member"
-                  onClick={() => { const p = positions?.find((x) => x.mmsi === m.mmsi); if (p) { setSelectedCluster(null); setSelected(p) } }}>
+                  onClick={() => { setSelectedCluster(null); selectByMmsi(m.mmsi) }}>
                   <span>{m.name ?? m.mmsi}</span>
                   {m.category && <span className={`tag ${m.category}`}>{CATEGORY_LABELS[m.category] ?? m.category}</span>}
                 </button>
@@ -872,18 +981,29 @@ export default function LiveMap() {
         {clusters && clusters.length > 0 && (
           <button className={`panel-toggle${showClusters ? ' on' : ''}`}
                   onClick={() => { setShowClusters((v) => !v); setShowLegend(false) }}>
-            Anchorages
+            Gatherings
           </button>
         )}
       </div>
 
       {clusters && clusters.length > 0 && (
         <div className={`cluster-panel${showClusters ? ' open' : ''}`}>
-          <div className="legend-head" style={{ marginTop: 0 }}>Shadow-fleet anchorages</div>
+          <div className="legend-head" style={{ marginTop: 0 }}>Fleet gathering spots</div>
           {clusters.slice(0, 5).map((c, i) => (
-            <button key={i} className="cluster-row" onClick={() => mapRef.current?.flyTo({ center: [c.lon, c.lat], zoom: 10 })}>
-              <b>{c.count} shadow-fleet ships</b>{c.sanctioned > 0 ? ` · ${c.sanctioned} sanctioned` : ''} anchored together at {c.lat.toFixed(2)}, {c.lon.toFixed(2)}
-              <span className="mono">{c.members.slice(0, 4).map((m) => m.name).filter(Boolean).join(', ')}{c.count > 4 ? '...' : ''} - click to zoom</span>
+            <button key={i} className="cluster-row"
+              onClick={() => {
+                setSelected(null); setSelectedAmbient(null); setSelectedCluster(c)
+                mapRef.current?.flyTo({ center: [c.lon, c.lat], zoom: 10 })
+              }}>
+              <b>{c.count} shadow-fleet ships anchored</b>
+              {c.nearby > 0 ? ` · ≈${c.count + c.nearby} flagged in the area` : ''}
+              {c.region ? ` · ${c.region}` : ` · around ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)}`}
+              <span className="mono">
+                {c.recent_alerts.length > 0
+                  ? `alerts: ${c.recent_alerts.slice(0, 3).map((a) => a.pattern).join(', ')}`
+                  : `${c.members.slice(0, 4).map((m) => m.name).filter(Boolean).join(', ')}${c.count > 4 ? '...' : ''}`}
+                {' '}- click for details
+              </span>
             </button>
           ))}
         </div>

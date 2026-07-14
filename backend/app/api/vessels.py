@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import current_superuser
 from ..config import get_settings
 from ..db import get_session
-from ..models import Position, PositionCheck, Vessel, VesselRegistry
+from ..models import LatestPosition, Position, PositionCheck, RiskEvent, Vessel, VesselRegistry
 from ..schemas import PositionCheckOut, PositionOut, VesselCreate, VesselOut, VesselUpdate
 
 router = APIRouter(prefix="/api/vessels", tags=["vessels"])
@@ -63,11 +63,20 @@ async def search_vessels(q: str = Query(min_length=2), session: AsyncSession = D
 @router.get("/{mmsi}/info")
 async def vessel_info(mmsi: int, session: AsyncSession = Depends(get_session)):
     """Everything we know about ANY vessel (not just the watchlist): registry
-    identity + watchlist/risk status. Powers the click panel for ambient ships."""
-    from .positions import ship_type_label
+    identity + watchlist/risk status. Powers the click panel for ambient ships
+    and the /ship/<mmsi> deep link when the ship isn't in the live feed."""
+    from .positions import PATTERN_LABELS, ship_type_label
 
     reg = await session.get(VesselRegistry, mmsi)
     v = await session.scalar(select(Vessel).where(Vessel.mmsi == mmsi))
+    patterns: list[str] = []
+    if v and v.active:
+        rules = (await session.execute(
+            select(RiskEvent.rule).where(RiskEvent.mmsi == mmsi).distinct()
+        )).scalars().all()
+        patterns = [PATTERN_LABELS.get(r, r) for r in rules]
+    # real last received position, even when older than the live-feed window
+    lp = await session.get(LatestPosition, mmsi)
     return {
         "mmsi": mmsi,
         "name": (reg.name if reg else None) or (v.name if v else None),
@@ -82,6 +91,13 @@ async def vessel_info(mmsi: int, session: AsyncSession = Depends(get_session)):
         "category": v.category if (v and v.active) else None,
         "risk_score": v.risk_score if v else None,
         "notes": v.notes if v else None,
+        "patterns": patterns,
+        "last_pos": {
+            "ts": lp.ts.isoformat(timespec="seconds"),
+            "lat": round(lp.lat, 5), "lon": round(lp.lon, 5),
+            "sog": lp.sog, "cog": lp.cog, "heading": lp.heading,
+            "source": lp.source,
+        } if lp else None,
     }
 
 
