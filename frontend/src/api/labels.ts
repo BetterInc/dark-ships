@@ -85,5 +85,8 @@ export function detailBits(detail: Record<string, unknown> | null | undefined): 
   if (typeof detail.lat === 'number' && typeof detail.lon === 'number') {
     bits.push(`${(detail.lat as number).toFixed(3)}, ${(detail.lon as number).toFixed(3)}`)
   }
+  // congested-water events are kept but flagged low-confidence: a receiver
+  // artifact in a busy port, unless it's a deliberate operator worth a look
+  if (detail.congestion === true) bits.push('congested waters (low confidence)')
   return bits
 }

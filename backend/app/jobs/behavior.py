@@ -198,6 +198,41 @@ def _in_port_zone(lat: float, lon: float) -> bool:
                for _, la0, la1, lo0, lo1 in PORT_ZONES)
 
 
+# Broader busy-water masks for the position-ARTIFACT-prone rules
+# (impossible_jump / loitering / dark_association). Dense AIS traffic near
+# major ports produces receiver-overlap "teleports" and anchorage huddles that
+# are congestion, not spoofing/STS. Measured on prod: ~66% of impossible_jump
+# and ~55% of loitering/dark_association fire in the Low Countries complex
+# alone. We do NOT drop these events - a deliberately-spoofing operator can sit
+# in busy water too - we keep them recorded and visible but DOWNWEIGHT them
+# (congestion=True in details) so they stop inflating the suspect list and
+# watchlist scores. Kept OFF genuine shadow-fleet corridors (Baltic exit,
+# Bosphorus, EOPL) so real detections there are untouched.
+CONGESTION_ZONES = [
+    ("Low Countries / S North Sea", 51.0, 53.7, 2.0, 7.0),
+    ("Busan / Korea Strait",        34.4, 35.7, 128.4, 130.0),
+    ("Barcelona",                   41.2, 41.6, 1.9, 2.5),
+]
+CONGESTION_WEIGHT_FACTOR = 0.15  # busy-water events keep ~15% of their weight
+
+
+def _in_busy_waters(lat: float, lon: float) -> bool:
+    return _in_port_zone(lat, lon) or any(
+        la0 <= lat <= la1 and lo0 <= lon <= lo1
+        for _, la0, la1, lo0, lo1 in CONGESTION_ZONES)
+
+
+def _maybe_congested(ev: RiskEvent, lat: float, lon: float) -> RiskEvent:
+    """Flag + downweight an event whose location is congested AIS water, so a
+    receiver artifact stays visible for review but doesn't inflate the score."""
+    if _in_busy_waters(lat, lon):
+        ev.score = round(ev.score * CONGESTION_WEIGHT_FACTOR, 1)
+        det = json.loads(ev.details or "{}")
+        det["congestion"] = True
+        ev.details = json.dumps(det, default=str)
+    return ev
+
+
 def _in_sts_region(lat: float, lon: float) -> bool:
     """True if the point sits inside a region tagged kind=='sts' (Eastern Med,
     Port Said/Suez, Hormuz, Singapore & Riau) - where at-sea cargo transfer is
@@ -342,9 +377,10 @@ async def rule_impossible_jumps(session, now: datetime) -> list[RiskEvent]:
             if not await _plausibly_fast(session, mmsi, now) and \
                not await _has_event(session, mmsi, "impossible_jump",
                                     now - timedelta(hours=JUMP_COOLDOWN_HOURS)):
-                events.append(_event(mmsi, "impossible_jump",
+                events.append(_maybe_congested(_event(mmsi, "impossible_jump",
                                      implied_kn=round(speed_kn, 1),
-                                     from_=[a.lat, a.lon], to=[b.lat, b.lon]))
+                                     from_=[a.lat, a.lon], to=[b.lat, b.lon]),
+                                     b.lat, b.lon))
             break
     return events
 
@@ -599,8 +635,9 @@ async def rule_dark_association(session, now: datetime) -> list[RiskEvent]:
                    and abs(s.lon - p.lon) < 0.15
                    and haversine_km(p.lat, p.lon, s.lat, s.lon) <= 10.0)
         if near >= 3 and not await _has_event(session, p.mmsi, "dark_association", None):
-            events.append(_event(p.mmsi, "dark_association", sanctioned_nearby=near,
-                                 lat=p.lat, lon=p.lon, ship_name=p.ship_name))
+            events.append(_maybe_congested(
+                _event(p.mmsi, "dark_association", sanctioned_nearby=near,
+                       lat=p.lat, lon=p.lon, ship_name=p.ship_name), p.lat, p.lon))
     return events
 
 
@@ -640,9 +677,10 @@ async def rule_loitering(session, now: datetime) -> list[RiskEvent]:
         moved = max((t.sog or 0) for t in track)
         if moved > 8.0:
             continue  # had a real transit leg in the window - just passing
-        events.append(_event(p.mmsi, "loitering", hours=round(span_h, 1),
-                             radius_km=round(radius, 1), lat=round(lat_c, 3),
-                             lon=round(lon_c, 3), ship_name=p.ship_name))
+        events.append(_maybe_congested(
+            _event(p.mmsi, "loitering", hours=round(span_h, 1),
+                   radius_km=round(radius, 1), lat=round(lat_c, 3),
+                   lon=round(lon_c, 3), ship_name=p.ship_name), lat_c, lon_c))
         logger.info("Loitering: MMSI %s held position %.0fh within %.1f km at %.2f,%.2f",
                     p.mmsi, span_h, radius, lat_c, lon_c)
     return events
