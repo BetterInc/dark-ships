@@ -27,6 +27,14 @@ MIN_VALID_FRACTION = 0.35  # chip must actually contain this much swath data
 PFA = 1e-7                 # per-pixel false alarms: ~0.01 px per 300x300 chip
 MIN_TARGET_PX = 3          # >= 3 px at 10 m/px ~= a 30 m object
 MATCH_RADIUS_M = 500.0     # target within this of the claim = hull present
+# Land/infrastructure guard, validated on real harbor chips (Port Said,
+# Limassol): coastal land shows up as huge connected bright components
+# (city blocks, quays - thousands of px) and a high bright fraction, while
+# even a 330 m tanker with sidelobes stays a few hundred px. A chip that
+# trips either limit is land-contaminated: a "hull" there could be a pier,
+# so we return no verdict instead of guessing.
+MAX_TARGET_PX = 600        # larger connected component = structure, not ship
+MAX_BRIGHT_FRACTION = 0.03 # more of the chip above threshold = not open sea
 
 
 @dataclass
@@ -74,6 +82,8 @@ def detect_ships(chip, m_per_px: float) -> ChipResult:
     db = np.full(chip.shape, -40.0, dtype=np.float32)
     db[valid] = 10.0 * np.log10(np.maximum(chip[valid], 1e-6))
     mask = (chip > thr) & valid
+    if float(mask.mean()) > MAX_BRIGHT_FRACTION:
+        return ChipResult(valid=False)  # land/urban clutter dominates the chip
     cy, cx = (chip.shape[0] - 1) / 2.0, (chip.shape[1] - 1) / 2.0
 
     detections: list[Detection] = []
@@ -96,6 +106,8 @@ def detect_ships(chip, m_per_px: float) -> ChipResult:
                             and mask[ny, nx] and not seen[ny, nx]):
                         seen[ny, nx] = True
                         stack.append((ny, nx))
+        if len(comp) > MAX_TARGET_PX:
+            return ChipResult(valid=False)  # ship-sized things aren't this big
         if len(comp) < MIN_TARGET_PX:
             continue
         my = sum(p[0] for p in comp) / len(comp)

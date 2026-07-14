@@ -974,11 +974,17 @@ export default function LiveMap() {
             </div>
             <div style={{ maxHeight: 260, overflowY: 'auto', display: 'grid', gap: '0.25rem' }}>
               {selectedCluster.members.map((m) => (
-                <button key={m.mmsi} className="cluster-member"
-                  onClick={() => { setSelectedCluster(null); selectByMmsi(m.mmsi) }}>
-                  <span>{m.name ?? m.mmsi}</span>
-                  {m.category && <span className={`tag ${m.category}`}>{CATEGORY_LABELS[m.category] ?? m.category}</span>}
-                </button>
+                <div key={m.mmsi} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <button className="cluster-member" style={{ flex: 1 }}
+                    onClick={() => { setSelectedCluster(null); selectByMmsi(m.mmsi) }}>
+                    <span>{m.name ?? m.mmsi}</span>
+                    {m.category && <span className={`tag ${m.category}`}>{CATEGORY_LABELS[m.category] ?? m.category}</span>}
+                  </button>
+                  <Link to={`/ship/${m.mmsi}/details`} title="Full profile"
+                        style={{ color: 'var(--watch-other)', fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap' }}>
+                    »
+                  </Link>
+                </div>
               ))}
             </div>
           </div>
