@@ -56,6 +56,7 @@ async def init_db() -> None:
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS hull_detected BOOLEAN",
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS target_count INTEGER",
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS nearest_offset_m DOUBLE PRECISION",
+            "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS persistent_target BOOLEAN",
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS chip_key VARCHAR(256)",
             # backfill accounts promoted before the role column existed
             "UPDATE users SET role = 'admin' WHERE is_superuser AND role = 'user'",

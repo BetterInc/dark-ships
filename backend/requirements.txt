@@ -18,8 +18,8 @@ pytz>=2024.1
 # backend by default; point RATELIMIT_STORAGE_URI at Redis/Valkey to share the
 # counters across web replicas. Add limits[async-redis] when doing so.
 limits>=3.13
-# SAR ship detection: chip fetch (Pillow decodes the float32 TIFF), CFAR-style
-# thresholding (numpy), chip storage on MinIO/R2 (boto3)
+# SAR ship detection: chip fetch (tifffile decodes the float32 TIFF - Pillow
+# garbles its float predictor), CFAR thresholding (numpy), chips on MinIO/R2 (boto3)
 numpy>=1.26
-pillow>=10.0
+tifffile>=2024.2
 boto3>=1.34

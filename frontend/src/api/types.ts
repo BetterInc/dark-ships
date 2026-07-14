@@ -66,6 +66,8 @@ export interface PositionCheck {
   hull_detected: boolean | null
   target_count: number | null
   nearest_offset_m: number | null
+  // target also bright on a pass weeks earlier: fixed structure or long-anchored
+  persistent_target: boolean | null
   chip_key: string | null  // set = chip PNG at /api/position-checks/{id}/chip
 }
 

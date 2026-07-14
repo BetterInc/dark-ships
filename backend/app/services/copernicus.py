@@ -68,10 +68,19 @@ async def search_scenes(polygon_wkt: str, t_start: datetime, t_end: datetime,
                 logger.exception("Copernicus search failed (%s)", collection)
                 continue
 
+            # The catalogue lists most captures twice (plain + _COG processing
+            # of the SAME acquisition, e.g. ..._5A9E_COG.SAFE and ..._E620.SAFE).
+            # Key on the name up to the datatake id (first 8 '_' fields) so each
+            # capture is stored/analyzed once instead of burning double quota.
+            seen_captures: set[str] = set()
             for product in payload.get("value", []):
                 acquired_raw = (product.get("ContentDate") or {}).get("Start")
                 if not acquired_raw:
                     continue
+                capture_key = "_".join((product.get("Name") or product["Id"]).split("_")[:8])
+                if capture_key in seen_captures:
+                    continue
+                seen_captures.add(capture_key)
                 acquired = datetime.fromisoformat(acquired_raw.replace("Z", "+00:00"))
                 ql = None
                 for asset in product.get("Assets") or []:

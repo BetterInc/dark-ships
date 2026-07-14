@@ -77,22 +77,27 @@ def chip_bbox(lat: float, lon: float, half_km: float = CHIP_HALF_KM) -> list[flo
     return [lon - dlon, lat - dlat, lon + dlon, lat + dlat]
 
 
-async def fetch_s1_chip(lat: float, lon: float, acquired_at: datetime,
+async def fetch_s1_chip(lat: float, lon: float, acquired_at: datetime | None = None,
+                        t_from: datetime | None = None, t_to: datetime | None = None,
                         ) -> "tuple | None":
-    """Fetch the float32 VV sigma0 chip for the S1 acquisition that covers
-    (lat, lon) at acquired_at. Returns (numpy 2D array, metres_per_pixel) or
-    None when the chip can't be produced (no credentials, API error, or the
-    AOI falls outside the swath)."""
+    """Fetch a float32 VV sigma0 chip of (lat, lon). Pass acquired_at to
+    isolate one catalogued acquisition (a one-hour window around it), or an
+    explicit [t_from, t_to] window to render the most recent acquisition in
+    that range (used for the persistent-target reference pass). Returns
+    (numpy 2D array, metres_per_pixel) or None when the chip can't be
+    produced (no credentials, API error, or the AOI is outside every swath)."""
     import numpy as np
-    from PIL import Image
+    import tifffile
 
     if not get_settings().sar_detection_enabled:
         return None
 
-    # a one-hour window around the catalogued acquisition isolates that exact
-    # orbit; mosaicking mostRecent then renders only this scene
-    t0 = (acquired_at - timedelta(minutes=30)).astimezone(timezone.utc)
-    t1 = (acquired_at + timedelta(minutes=30)).astimezone(timezone.utc)
+    if acquired_at is not None:
+        t_from = acquired_at - timedelta(minutes=30)
+        t_to = acquired_at + timedelta(minutes=30)
+    assert t_from is not None and t_to is not None
+    t0 = t_from.astimezone(timezone.utc)
+    t1 = t_to.astimezone(timezone.utc)
     bbox = chip_bbox(lat, lon)
     body = {
         "input": {
@@ -107,6 +112,7 @@ async def fetch_s1_chip(lat: float, lon: float, acquired_at: datetime,
                         "from": t0.strftime("%Y-%m-%dT%H:%M:%SZ"),
                         "to": t1.strftime("%Y-%m-%dT%H:%M:%SZ"),
                     },
+                    "mosaickingOrder": "mostRecent",
                 },
                 "processing": {
                     "backCoeff": "SIGMA0_ELLIPSOID",
@@ -136,8 +142,9 @@ async def fetch_s1_chip(lat: float, lon: float, acquired_at: datetime,
             return None
 
     try:
-        img = Image.open(io.BytesIO(resp.content))
-        arr = np.array(img, dtype=np.float32)
+        # tifffile, not Pillow: these TIFFs are deflate-compressed with the
+        # floating-point predictor, which Pillow silently decodes into garbage
+        arr = tifffile.imread(io.BytesIO(resp.content)).astype(np.float32)
     except Exception:
         logger.exception("Could not decode Sentinel Hub TIFF chip")
         return None

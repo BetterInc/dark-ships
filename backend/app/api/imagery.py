@@ -29,6 +29,7 @@ class ImageryItem(BaseModel):
     hull_detected: bool | None = None
     target_count: int | None = None
     nearest_offset_m: float | None = None
+    persistent_target: bool | None = None
     chip_key: str | None = None  # set = chip at /api/position-checks/{check_id}/chip
 
 
@@ -83,7 +84,8 @@ async def list_imagery(
                 quicklook_url=c.quicklook_url, browser_url=c.browser_url,
                 check_id=c.id, hull_detected=c.hull_detected,
                 target_count=c.target_count,
-                nearest_offset_m=c.nearest_offset_m, chip_key=c.chip_key,
+                nearest_offset_m=c.nearest_offset_m,
+                persistent_target=c.persistent_target, chip_key=c.chip_key,
             ))
 
     if want_gaps:

@@ -11,7 +11,7 @@ satellite measured; the Copernicus Browser link remains the ground truth.
 Skips cleanly when CDSE_SH_CLIENT_ID/SECRET are not configured."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -19,7 +19,8 @@ from ..config import get_settings
 from ..db import SessionLocal
 from ..models import PositionCheck
 from ..services.chipstore import put_chip
-from ..services.sardetect import detect_ships, render_chip_png
+from ..services.sardetect import (detect_ships, render_chip_png,
+                                  target_is_persistent)
 from ..services.sentinelhub import fetch_s1_chip
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,11 @@ logger = logging.getLogger(__name__)
 # Per run: keeps a 6-hourly job well inside the CDSE free-tier processing
 # quota even with a large backlog; the backlog drains across runs.
 BATCH_SIZE = 40
+# Reference pass for persistent-target suppression: far enough back that a
+# normal port call / short anchorage doesn't span both passes, close enough
+# that a S1 acquisition of the spot exists.
+REF_WINDOW_START_DAYS = 45
+REF_WINDOW_END_DAYS = 15
 
 
 async def run_sar_detection() -> None:
@@ -45,7 +51,7 @@ async def run_sar_detection() -> None:
         if not checks:
             return
 
-        analyzed = detected = 0
+        analyzed = detected = deleted = 0
         for check in checks:
             fetched = await fetch_s1_chip(
                 check.claimed_lat, check.claimed_lon, check.acquired_at)
@@ -56,18 +62,37 @@ async def run_sar_detection() -> None:
             chip, m_per_px = fetched
             result = detect_ships(chip, m_per_px)
 
+            if not result.valid:
+                # auto-verify workflow: an unjudgeable chip (AOI mostly outside
+                # the swath) verifies nothing - drop the check instead of
+                # accumulating rows a human would have to triage
+                await session.delete(check)
+                await session.commit()
+                deleted += 1
+                continue
+
             check.analyzed_at = datetime.now(timezone.utc)
-            if result.valid:
-                check.hull_detected = result.hull_detected
-                check.target_count = len(result.detections)
-                check.nearest_offset_m = result.nearest_offset_m
-            # else: analyzed but unjudgeable (chip mostly outside the swath) -
-            # hull_detected stays NULL, which the UI shows as "no verdict"
+            check.hull_detected = result.hull_detected
+            check.target_count = len(result.detections)
+            check.nearest_offset_m = result.nearest_offset_m
+
+            if result.hull_detected:
+                # cross-check against a pass weeks earlier: a "hull" that was
+                # already there is likely a fixed structure (turbine, platform)
+                # or a very long-anchored ship - flagged, not guessed away
+                ref = await fetch_s1_chip(
+                    check.claimed_lat, check.claimed_lon,
+                    t_from=check.acquired_at - timedelta(days=REF_WINDOW_START_DAYS),
+                    t_to=check.acquired_at - timedelta(days=REF_WINDOW_END_DAYS))
+                if ref is not None:
+                    check.persistent_target = target_is_persistent(
+                        result, detect_ships(ref[0], ref[1]), m_per_px)
 
             check.chip_key = await put_chip(check.id, render_chip_png(chip))
             analyzed += 1
             detected += 1 if check.hull_detected else 0
             await session.commit()  # per-check: a crash mid-batch loses nothing
 
-        logger.info("SAR detection: %d/%d checks analyzed, %d hulls confirmed",
-                    analyzed, len(checks), detected)
+        logger.info(
+            "SAR detection: %d analyzed (%d hulls confirmed), %d unjudgeable deleted",
+            analyzed, detected, deleted)

@@ -19,6 +19,7 @@ const Login = lazy(() => import('./pages/Login'))
 const Monitor = lazy(() => import('./pages/Monitor'))
 const Register = lazy(() => import('./pages/Register'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const ShipDetails = lazy(() => import('./pages/ShipDetails'))
 const Sources = lazy(() => import('./pages/Sources'))
 const Suggestions = lazy(() => import('./pages/Suggestions'))
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
@@ -117,6 +118,8 @@ export default function App() {
           <Route path="/" element={<LiveMap />} />
           {/* shareable deep link to a vessel; same map, focused on the ship */}
           <Route path="/ship/:mmsi" element={<LiveMap />} />
+          {/* full dossier: identity + evidence trail, no map */}
+          <Route path="/ship/:mmsi/details" element={<ShipDetails />} />
           <Route path="/monitor" element={<RequireAuth><Monitor /></RequireAuth>} />
           {/* standalone routes kept so existing in-app links keep working */}
           <Route

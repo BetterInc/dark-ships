@@ -174,6 +174,41 @@ async def position_checks(mmsi: int, session: AsyncSession = Depends(get_session
     return result.scalars().all()
 
 
+@router.get("/{mmsi}/events")
+async def vessel_events(mmsi: int, limit: int = Query(100, le=500),
+                        session: AsyncSession = Depends(get_session)):
+    """Public per-ship risk-event timeline (newest first) - powers the ship
+    dossier page. Same shape/severity language as the /me/events feed."""
+    import json
+
+    from .positions import PATTERN_LABELS
+    from .user_events import _severity
+
+    reg = await session.get(VesselRegistry, mmsi)
+    v = await session.scalar(select(Vessel).where(Vessel.mmsi == mmsi))
+    name = (reg.name if reg else None) or (v.name if v else None) or str(mmsi)
+    out = []
+    for e in (await session.execute(
+        select(RiskEvent).where(RiskEvent.mmsi == mmsi)
+        .order_by(RiskEvent.ts.desc()).limit(limit)
+    )).scalars():
+        detail: dict = {}
+        if e.details:
+            try:
+                parsed = json.loads(e.details)
+                if isinstance(parsed, dict):
+                    detail = parsed
+            except (ValueError, TypeError):
+                pass
+        out.append({
+            "mmsi": e.mmsi, "vessel_name": name, "rule": e.rule,
+            "label": PATTERN_LABELS.get(e.rule, e.rule),
+            "severity": _severity(e.rule, e.score),
+            "score": e.score, "ts": e.ts, "detail": detail,
+        })
+    return out
+
+
 @router.get("/{mmsi}/track", response_model=list[PositionOut])
 async def vessel_track(
     mmsi: int,

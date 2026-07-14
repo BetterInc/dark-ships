@@ -20,6 +20,7 @@ interface ImageryItem {
   hull_detected: boolean | null
   target_count: number | null
   nearest_offset_m: number | null
+  persistent_target: boolean | null
   chip_key: string | null
 }
 
@@ -72,12 +73,16 @@ function Verdict({ item }: { item: ImageryItem }) {
   if (item.hull_detected == null) {
     return <span className="mono" style={{ color: 'var(--muted)' }}>pending</span>
   }
-  return item.hull_detected ? (
+  if (!item.hull_detected) return <span style={{ color: '#ef4444' }}>□ no target</span>
+  return item.persistent_target ? (
+    <span style={{ color: '#f2b134' }}
+          title="the same spot was bright on a pass weeks earlier - fixed structure or a long-anchored ship">
+      ■ persistent target{item.nearest_offset_m != null ? ` · ${Math.round(item.nearest_offset_m)} m` : ''}
+    </span>
+  ) : (
     <span style={{ color: '#34d399' }}>
       ■ target at claim{item.nearest_offset_m != null ? ` · ${Math.round(item.nearest_offset_m)} m` : ''}
     </span>
-  ) : (
-    <span style={{ color: '#ef4444' }}>□ no target</span>
   )
 }
 

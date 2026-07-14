@@ -34,6 +34,8 @@ class Detection:
     offset_m: float
     area_px: int
     peak_db: float
+    y_px: float = 0.0  # component centroid, for cross-pass comparison
+    x_px: float = 0.0
 
 
 @dataclass
@@ -101,11 +103,52 @@ def detect_ships(chip, m_per_px: float) -> ChipResult:
         offset = float(((my - cy) ** 2 + (mx - cx) ** 2) ** 0.5) * m_per_px
         peak = float(max(db[y, x] for y, x in comp))
         detections.append(Detection(offset_m=round(offset, 1),
-                                    area_px=len(comp), peak_db=round(peak, 1)))
+                                    area_px=len(comp), peak_db=round(peak, 1),
+                                    y_px=my, x_px=mx))
 
     detections.sort(key=lambda d: d.offset_m)
     return ChipResult(valid=True, detections=detections,
                       clutter_db=round(10.0 * math.log10(med), 1))
+
+
+PERSIST_RADIUS_M = 150.0  # same-spot tolerance across passes (geocoding jitter)
+
+
+def target_is_persistent(current: ChipResult, reference: ChipResult,
+                         m_per_px: float) -> bool | None:
+    """Was the target confirming this claim ALSO bright on a pass weeks
+    earlier? A hull that 'never moves' across weeks is more likely a fixed
+    structure (wind turbine, platform, islet) - or a very long-anchored ship;
+    we report the measurement, the UI words the ambiguity. None = the
+    reference pass couldn't be judged."""
+    if not reference.valid:
+        return None
+    at_claim = [d for d in current.detections if d.offset_m <= MATCH_RADIUS_M]
+    if not at_claim:
+        return None
+    tgt = min(at_claim, key=lambda d: d.offset_m)
+    return any(
+        ((r.y_px - tgt.y_px) ** 2 + (r.x_px - tgt.x_px) ** 2) ** 0.5 * m_per_px
+        <= PERSIST_RADIUS_M
+        for r in reference.detections)
+
+
+def _encode_png_gray(gray) -> bytes:
+    """Minimal 8-bit grayscale PNG encoder (stdlib only - saves a Pillow dep
+    for the one image format we ever write)."""
+    import struct
+    import zlib
+
+    h, w = gray.shape
+    raw = b"".join(b"\x00" + gray[y].tobytes() for y in range(h))
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data)))
+
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0)  # 8-bit grayscale
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
 
 
 def render_chip_png(chip) -> bytes:
@@ -113,13 +156,9 @@ def render_chip_png(chip) -> bytes:
     0..255, no annotations drawn (the image stays exactly what the satellite
     measured)."""
     import numpy as np
-    from PIL import Image
 
     valid = chip > 0
     db = np.full(chip.shape, -30.0, dtype=np.float32)
     db[valid] = 10.0 * np.log10(np.maximum(chip[valid], 1e-6))
     scaled = np.clip((db + 25.0) / 25.0, 0.0, 1.0)
-    img = Image.fromarray((scaled * 255).astype(np.uint8), mode="L")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+    return _encode_png_gray(np.ascontiguousarray((scaled * 255).astype(np.uint8)))

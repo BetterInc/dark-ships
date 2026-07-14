@@ -1,6 +1,6 @@
 import maplibregl, { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, apiUrl, usePolling } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
@@ -131,10 +131,18 @@ function SatChecks({ checks }: { checks: PositionCheck[] }) {
           {c.hull_detected != null && (
             <div style={{ marginTop: 2 }}>
               {c.hull_detected ? (
-                <span style={{ color: '#34d399' }}>
-                  ■ radar target at claimed spot
-                  {c.nearest_offset_m != null ? ` · ${Math.round(c.nearest_offset_m)} m off` : ''}
-                </span>
+                c.persistent_target ? (
+                  <span style={{ color: '#f2b134' }}
+                        title="the same spot was bright on a pass weeks earlier - fixed structure or a long-anchored ship">
+                    ■ persistent target at claimed spot
+                    {c.nearest_offset_m != null ? ` · ${Math.round(c.nearest_offset_m)} m off` : ''}
+                  </span>
+                ) : (
+                  <span style={{ color: '#34d399' }}>
+                    ■ radar target at claimed spot
+                    {c.nearest_offset_m != null ? ` · ${Math.round(c.nearest_offset_m)} m off` : ''}
+                  </span>
+                )
               ) : (
                 <span style={{ color: '#ef4444' }}>□ no radar target within 500 m of claim</span>
               )}
@@ -862,6 +870,11 @@ export default function LiveMap() {
           <PatternTags patterns={selected.patterns ?? []} />
           <WatchNotes notes={selected.notes} />
           <SatChecks checks={posChecks} />
+          <Link to={`/ship/${selected.mmsi}/details`}
+                style={{ display: 'inline-block', marginTop: '0.7rem', color: 'var(--watch-other)', fontWeight: 600, fontSize: 13 }}>
+            Full profile →
+          </Link>
+          <br />
           <FollowButton mmsi={selected.mmsi} followed={followed} onAdded={addFollowed} />
           <ShareButton mmsi={selected.mmsi} />
         </aside>
@@ -902,6 +915,11 @@ export default function LiveMap() {
               gets a track and behavioural checks once it enters a monitored region.
             </p>
           )}
+          <Link to={`/ship/${selectedAmbient.mmsi}/details`}
+                style={{ display: 'inline-block', marginTop: '0.7rem', color: 'var(--watch-other)', fontWeight: 600, fontSize: 13 }}>
+            Full profile →
+          </Link>
+          <br />
           <FollowButton mmsi={selectedAmbient.mmsi} followed={followed} onAdded={addFollowed} />
           <ShareButton mmsi={selectedAmbient.mmsi} />
         </aside>

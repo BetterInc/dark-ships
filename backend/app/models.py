@@ -267,6 +267,9 @@ class PositionCheck(Base):
     hull_detected: Mapped[bool | None] = mapped_column(Boolean)
     target_count: Mapped[int | None] = mapped_column(Integer)   # bright targets in chip
     nearest_offset_m: Mapped[float | None] = mapped_column(Float)  # closest target vs claim
+    # target also bright on a pass weeks earlier -> fixed structure or a very
+    # long-anchored ship (NULL = no usable reference pass)
+    persistent_target: Mapped[bool | None] = mapped_column(Boolean)
     chip_key: Mapped[str | None] = mapped_column(String(256))   # S3 object key of the PNG
 
     __table_args__ = (
