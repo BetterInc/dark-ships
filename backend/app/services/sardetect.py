@@ -28,13 +28,15 @@ PFA = 1e-7                 # per-pixel false alarms: ~0.01 px per 300x300 chip
 MIN_TARGET_PX = 3          # >= 3 px at 10 m/px ~= a 30 m object
 MATCH_RADIUS_M = 500.0     # target within this of the claim = hull present
 # Land/infrastructure guard, validated on real harbor chips (Port Said,
-# Limassol): coastal land shows up as huge connected bright components
-# (city blocks, quays - thousands of px) and a high bright fraction, while
-# even a 330 m tanker with sidelobes stays a few hundred px. A chip that
-# trips either limit is land-contaminated: a "hull" there could be a pier,
-# so we return no verdict instead of guessing.
-MAX_TARGET_PX = 600        # larger connected component = structure, not ship
-MAX_BRIGHT_FRACTION = 0.03 # more of the chip above threshold = not open sea
+# Limassol, Istanbul): coastal land shows up as huge connected bright
+# components (city blocks, quays - thousands of px) and a high bright
+# fraction, while even a 330 m tanker with sidelobes stays a few hundred px.
+# The guard is LOCAL to the claim: a town 2 km away at the chip edge doesn't
+# block judging a clean target at the centre (Limassol/Istanbul anchorages),
+# but structures near the claim mean a "hull" could be a pier - no verdict.
+MAX_TARGET_PX = 600         # larger connected component = structure, not ship
+MAX_BRIGHT_FRACTION = 0.03  # chip-wide: mostly-land chip (harbor) = no verdict
+GUARD_RADIUS_M = 1000.0     # structures within this of the claim = no verdict
 
 
 @dataclass
@@ -107,7 +109,12 @@ def detect_ships(chip, m_per_px: float) -> ChipResult:
                         seen[ny, nx] = True
                         stack.append((ny, nx))
         if len(comp) > MAX_TARGET_PX:
-            return ChipResult(valid=False)  # ship-sized things aren't this big
+            # ship-sized things aren't this big: structure/land. Fatal when it
+            # reaches the claim neighbourhood, otherwise ignored (not a ship).
+            guard_px = GUARD_RADIUS_M / m_per_px
+            if min((y - cy) ** 2 + (x - cx) ** 2 for y, x in comp) <= guard_px ** 2:
+                return ChipResult(valid=False)
+            continue
         if len(comp) < MIN_TARGET_PX:
             continue
         my = sum(p[0] for p in comp) / len(comp)
