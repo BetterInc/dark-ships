@@ -1,5 +1,7 @@
-import { useState } from 'react'
-import { usePolling } from '../api/client'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { apiUrl, usePolling } from '../api/client'
+import Pagination from '../components/Pagination'
 
 interface ImageryItem {
   kind: 'position_check' | 'gap_scene'
@@ -14,27 +16,22 @@ interface ImageryItem {
   product_name: string | null
   quicklook_url: string | null
   browser_url: string | null
+  check_id: number | null
+  hull_detected: boolean | null
+  target_count: number | null
+  nearest_offset_m: number | null
+  chip_key: string | null
 }
+
+interface ImageryPage {
+  total: number
+  items: ImageryItem[]
+}
+
+const PAGE_SIZE = 25
 
 function fmtUtc(iso: string): string {
   return new Date(iso).toLocaleString('en-GB', { timeZone: 'UTC' }) + ' UTC'
-}
-
-function Thumb({ item }: { item: ImageryItem }) {
-  const [broken, setBroken] = useState(false)
-  if (!item.quicklook_url || broken) {
-    return (
-      <div style={{
-        width: 110, height: 110, borderRadius: 4, border: '1px solid var(--line)',
-        display: 'grid', placeItems: 'center', color: 'var(--muted)', fontSize: 11,
-      }} className="mono">no preview</div>
-    )
-  }
-  return (
-    <img src={item.quicklook_url} alt={item.product_name ?? 'satellite scene'}
-      style={{ width: 110, height: 110, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }}
-      onError={() => setBroken(true)} />
-  )
 }
 
 // Deep-link into the Copernicus Browser zoomed tight (z=16) on the exact
@@ -45,70 +42,166 @@ function zoomedBrowserUrl(lat: number, lon: number, acquiredAt: string): string 
     `&fromTime=${day}T00%3A00%3A00.000Z&toTime=${day}T23%3A59%3A59.999Z`
 }
 
+// Chip PNG (our own measured SAR crop) when stored, else the scene quicklook.
+function Thumb({ item }: { item: ImageryItem }) {
+  const [broken, setBroken] = useState(false)
+  const chip = item.check_id != null && item.chip_key
+    ? apiUrl(`/position-checks/${item.check_id}/chip`) : null
+  const src = chip ?? item.quicklook_url
+  useEffect(() => { setBroken(false) }, [src])
+  if (!src || broken) {
+    return (
+      <div style={{
+        width: 56, height: 56, borderRadius: 4, border: '1px solid var(--line)',
+        display: 'grid', placeItems: 'center', color: 'var(--muted)', fontSize: 9,
+      }} className="mono">no img</div>
+    )
+  }
+  const img = (
+    <img src={src} alt={chip ? 'SAR chip around claimed position' : (item.product_name ?? 'satellite scene')}
+      title={chip ? '3x3 km SAR chip around the claimed position - click to enlarge' : 'scene quicklook'}
+      style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 4,
+               border: chip ? '1px solid var(--watch-other)' : '1px solid var(--line)' }}
+      onError={() => setBroken(true)} loading="lazy" />
+  )
+  return <a href={src} target="_blank" rel="noreferrer">{img}</a>
+}
+
+function Verdict({ item }: { item: ImageryItem }) {
+  if (item.kind !== 'position_check') return <span className="mono" style={{ color: 'var(--muted)' }}>-</span>
+  if (item.hull_detected == null) {
+    return <span className="mono" style={{ color: 'var(--muted)' }}>pending</span>
+  }
+  return item.hull_detected ? (
+    <span style={{ color: '#34d399' }}>
+      ■ target at claim{item.nearest_offset_m != null ? ` · ${Math.round(item.nearest_offset_m)} m` : ''}
+    </span>
+  ) : (
+    <span style={{ color: '#ef4444' }}>□ no target</span>
+  )
+}
+
 export default function Imagery() {
-  const { data: items, error } = usePolling<ImageryItem[]>('/imagery', 60_000)
+  const [page, setPage] = useState(0)
+  const [kind, setKind] = useState('all')
+  const [source, setSource] = useState('all')
+  const [verdict, setVerdict] = useState('all')
+
+  const params = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) })
+  if (kind !== 'all') params.set('kind', kind)
+  if (source !== 'all') params.set('source', source)
+  if (verdict !== 'all') params.set('verdict', verdict)
+  const { data, error } = usePolling<ImageryPage>(`/imagery?${params}`, 60_000)
+
+  useEffect(() => { setPage(0) }, [kind, source, verdict])
+  const total = data?.total ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  useEffect(() => { if (page > pageCount - 1) setPage(pageCount - 1) }, [page, pageCount])
 
   return (
     <div className="page">
-      <div className="under-construction">
-        <span className="uc-badge">Under construction</span>
-        This view is being integrated - the data below is preliminary and may shift as the feature lands.
-      </div>
       <h1>Imagery</h1>
       <p className="sub">
-        Every satellite capture the system has matched against a watchlist ship&apos;s
-        position. The thumbnail is the <strong>full 110 km scene</strong> - a ship is a
-        speck at that scale, so use <strong>&quot;Zoom to ship&quot;</strong> to open the
-        Copernicus Browser tight on the exact coordinate and read the hull. Radar
-        (Sentinel-1) sees through clouds and dark; optical (Sentinel-2) needs daylight.
+        Every satellite capture matched against a watchlist ship&apos;s position.
+        Sentinel-1 (radar) checks are analyzed automatically: a bright radar
+        target at the claimed spot confirms a hull, and the 3&times;3 km chip
+        shows exactly what the satellite measured. <strong>Zoom to ship</strong>{' '}
+        opens the Copernicus Browser on the coordinate for human verification.
       </p>
 
       {error && <p className="error">{error}</p>}
 
-      {items?.map((item, i) => (
-        <article key={i} className="gap-card">
-          <div className="imagery-row">
-            <Thumb item={item} />
-            <div className="imagery-meta">
-              <header style={{ display: 'flex', gap: '0.7rem', alignItems: 'baseline', flexWrap: 'wrap' }}>
-                <h3>{item.vessel_name ?? `MMSI ${item.mmsi}`}</h3>
-                <span className={`tag ${item.source === 'sentinel-1' ? 'other' : 'shadow_fleet'}`}>{item.source}</span>
-                <span className={`tag ${item.kind === 'position_check' ? 'closed' : 'open'}`}>
-                  {item.kind === 'position_check' ? 'claimed-position check' : 'AIS-gap scene'}
-                </span>
-              </header>
-              <div className="gap-meta">
-                <div>Captured<b>{fmtUtc(item.acquired_at)}</b></div>
-                <div>Position<b>{item.lat.toFixed(3)}, {item.lon.toFixed(3)}</b></div>
-                {item.delta_minutes != null && <div>Claim vs capture<b>Δ {item.delta_minutes.toFixed(0)} min</b></div>}
-                {item.gap_id != null && <div>Gap<b>#{item.gap_id}</b></div>}
-              </div>
-              <div className="mono" style={{ color: 'var(--muted)', fontSize: 12, margin: '0.3rem 0' }}>
-                {item.product_name}
-              </div>
-              <a href={zoomedBrowserUrl(item.lat, item.lon, item.acquired_at)} target="_blank"
-                 rel="noreferrer" style={{ color: 'var(--watch-other)', fontWeight: 600 }}>
-                Zoom to ship →
-              </a>
-              {item.browser_url && (
-                <a href={item.browser_url} target="_blank" rel="noreferrer"
-                   style={{ color: 'var(--muted)', marginLeft: '1rem', fontSize: 12 }}>
-                  wide scene
-                </a>
-              )}
-            </div>
-          </div>
-        </article>
-      ))}
+      <div className="filters">
+        <label className="field">
+          Kind
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            <option value="all">All kinds</option>
+            <option value="position_check">Claimed-position checks</option>
+            <option value="gap_scene">AIS-gap scenes</option>
+          </select>
+        </label>
+        <label className="field">
+          Source
+          <select value={source} onChange={(e) => setSource(e.target.value)}>
+            <option value="all">All satellites</option>
+            <option value="sentinel-1">Sentinel-1 (radar)</option>
+            <option value="sentinel-2">Sentinel-2 (optical)</option>
+          </select>
+        </label>
+        <label className="field">
+          Verdict
+          <select value={verdict} onChange={(e) => setVerdict(e.target.value)}>
+            <option value="all">All verdicts</option>
+            <option value="hull">Target at claim</option>
+            <option value="no_target">No target</option>
+            <option value="pending">Not analyzed</option>
+          </select>
+        </label>
+        <span className="filter-count">{total} captures</span>
+      </div>
 
-      {items && items.length === 0 && (
+      {total > 0 && (
+        <Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
+      )}
+
+      {data && data.items.length > 0 && (
+        <div className="table-scroll">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Preview</th>
+                <th>Ship</th>
+                <th>Source</th>
+                <th>Kind</th>
+                <th>Captured</th>
+                <th>Δ claim</th>
+                <th>Radar verdict</th>
+                <th>Verify</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((item, i) => (
+                <tr key={`${item.kind}-${item.check_id ?? item.gap_id}-${i}`}>
+                  <td><Thumb item={item} /></td>
+                  <td>
+                    <Link to={`/ship/${item.mmsi}`}>{item.vessel_name ?? item.mmsi}</Link>
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--muted)' }}>{item.mmsi}</div>
+                  </td>
+                  <td>
+                    <span className={`tag ${item.source === 'sentinel-1' ? 'other' : 'shadow_fleet'}`}>{item.source}</span>
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>
+                    {item.kind === 'position_check' ? 'position check' : `gap scene #${item.gap_id}`}
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>{fmtUtc(item.acquired_at)}</td>
+                  <td className="mono" style={{ fontSize: 12 }}>
+                    {item.delta_minutes != null ? `${item.delta_minutes.toFixed(0)} min` : '-'}
+                  </td>
+                  <td style={{ fontSize: 12 }}><Verdict item={item} /></td>
+                  <td>
+                    <a href={zoomedBrowserUrl(item.lat, item.lon, item.acquired_at)} target="_blank"
+                       rel="noreferrer" style={{ color: 'var(--watch-other)', fontWeight: 600, fontSize: 12 }}>
+                      Zoom to ship →
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {total > 0 && (
+        <Pagination page={page} pageCount={pageCount} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
+      )}
+
+      {data && total === 0 && (
         <p className="empty">
-          No satellite captures matched yet. Matches appear automatically when a
-          Sentinel satellite passes over a tracked ship: Sentinel-1 radar crosses any
-          spot around dawn and dusk (~05:30 / ~17:30 local) every 1-3 days,
-          Sentinel-2 optical mid-morning every 2-5 days. Tracking started today -
-          expect the first radar captures after the next dusk pass. The matcher
-          re-runs every 6 hours.
+          No satellite captures match. Matches appear automatically when a
+          Sentinel satellite passes over a tracked ship: Sentinel-1 radar crosses
+          any spot around dawn and dusk (~05:30 / ~17:30 local) every 1-3 days,
+          Sentinel-2 optical mid-morning every 2-5 days. The matcher re-runs
+          every 6 hours.
         </p>
       )}
     </div>

@@ -62,6 +62,11 @@ export interface PositionCheck {
   delta_minutes: number
   quicklook_url: string | null
   browser_url: string | null
+  // automated SAR detection (null = not analyzed / no verdict possible)
+  hull_detected: boolean | null
+  target_count: number | null
+  nearest_offset_m: number | null
+  chip_key: string | null  // set = chip PNG at /api/position-checks/{id}/chip
 }
 
 export interface LatestPosition {

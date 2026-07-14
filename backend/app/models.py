@@ -260,6 +260,14 @@ class PositionCheck(Base):
     delta_minutes: Mapped[float] = mapped_column(Float)  # |claim time - capture time|
     quicklook_url: Mapped[str | None] = mapped_column(Text)
     browser_url: Mapped[str | None] = mapped_column(Text)
+    # Automated SAR detection (sentinel-1 checks only). NULL analyzed_at =
+    # not analyzed yet; hull_detected NULL after analysis = chip unusable
+    # (mostly no-data). Never guessed: values come from measured backscatter.
+    analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    hull_detected: Mapped[bool | None] = mapped_column(Boolean)
+    target_count: Mapped[int | None] = mapped_column(Integer)   # bright targets in chip
+    nearest_offset_m: Mapped[float | None] = mapped_column(Float)  # closest target vs claim
+    chip_key: Mapped[str | None] = mapped_column(String(256))   # S3 object key of the PNG
 
     __table_args__ = (
         Index("ix_position_checks_mmsi_product", "mmsi", "product_id", unique=True),

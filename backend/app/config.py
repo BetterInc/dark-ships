@@ -92,6 +92,18 @@ class Settings(BaseSettings):
         return bool(self.s3_endpoint and self.s3_bucket
                     and self.s3_access_key_id and self.s3_secret_access_key)
 
+    # Automated SAR ship detection. Needs a (free) Copernicus Data Space
+    # Sentinel Hub OAuth client: dataspace.copernicus.eu -> account settings ->
+    # OAuth clients. Leave blank to keep human-only verification via the
+    # Copernicus Browser links. Detected chips are stored on the same
+    # S3-compatible storage as the cold tier (MinIO locally, R2 in prod).
+    cdse_sh_client_id: str = ""
+    cdse_sh_client_secret: str = ""
+
+    @property
+    def sar_detection_enabled(self) -> bool:
+        return bool(self.cdse_sh_client_id and self.cdse_sh_client_secret)
+
     # Deployment environment. Defaults to "production" so the auth_secret
     # seatbelt (main.py) FAILS CLOSED: a deploy that forgets to set ENVIRONMENT
     # still refuses to boot on the insecure default secret. Local/dev must opt

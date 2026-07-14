@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..db import get_session
-from ..models import LatestPosition, Position, RiskEvent, Vessel, VesselRegistry
+from ..models import LatestPosition, Position, PositionCheck, RiskEvent, Vessel, VesselRegistry
 from ..schemas import LatestPositionOut, RegionOut
 
 # The latest-positions snapshot is identical for every visitor and costs ~1s of
@@ -409,6 +409,24 @@ async def clusters(session: AsyncSession = Depends(get_session)):
         })
     clusters.sort(key=lambda c: -c["count"])
     return clusters
+
+
+@router.get("/position-checks/{check_id}/chip")
+async def position_check_chip(check_id: int, session: AsyncSession = Depends(get_session)):
+    """The stored SAR chip (grayscale sigma0 PNG) behind an automated hull
+    verdict - proxied from MinIO/R2 so the bucket itself stays private."""
+    from fastapi import HTTPException
+
+    from ..services.chipstore import get_chip
+
+    check = await session.get(PositionCheck, check_id)
+    if not check or not check.chip_key:
+        raise HTTPException(404, "no chip stored for this check")
+    png = await get_chip(check.chip_key)
+    if png is None:
+        raise HTTPException(404, "chip object unavailable")
+    return Response(png, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/positions/history/{mmsi}")

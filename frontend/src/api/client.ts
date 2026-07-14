@@ -7,6 +7,11 @@ const TOKEN_KEY = 'ds_token'
 // time. Locally this is empty, so requests hit /api and Vite proxies them.
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
+/** Absolute URL of a raw API resource (images etc.) for use in href/src. */
+export function apiUrl(path: string): string {
+  return `${API_BASE}/api${path}`
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
 }

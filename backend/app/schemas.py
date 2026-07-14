@@ -116,6 +116,12 @@ class PositionCheckOut(BaseModel):
     delta_minutes: float
     quicklook_url: str | None
     browser_url: str | None
+    # automated SAR detection; all None until the sar_detector job has run
+    # (or forever, for sentinel-2 checks and unjudgeable chips)
+    hull_detected: bool | None = None
+    target_count: int | None = None
+    nearest_offset_m: float | None = None
+    chip_key: str | None = None  # set = chip PNG available at /api/position-checks/{id}/chip
 
 
 class RegionOut(BaseModel):

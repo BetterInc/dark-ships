@@ -2,9 +2,10 @@
 
 Searches Sentinel-1 (SAR, works through clouds and at night) and Sentinel-2
 (optical) acquisitions that intersect the drift area of an AIS gap. Catalogue
-search works without authentication. We do no ship detection in the imagery
-itself - we deliver the scene + quicklook + Copernicus Browser link for human
-verification.
+search works without authentication. This module only matches scenes; the
+automated ship detection on those scenes lives in jobs/sar_detector.py
+(services/sentinelhub.py + services/sardetect.py), and the quicklook +
+Copernicus Browser link keep human verification one click away.
 """
 
 import logging

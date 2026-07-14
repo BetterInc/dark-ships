@@ -26,6 +26,7 @@ from .jobs.gap_detector import run_gap_detection
 from .jobs.partitions import ensure_partitions
 from .jobs.position_checker import run_position_checks
 from .jobs.retention import prune_positions
+from .jobs.sar_detector import run_sar_detection
 from .models import Base
 from .services.cerulean import sync_slicks
 from .services.gfw import sync_gfw_events
@@ -50,6 +51,12 @@ async def init_db() -> None:
             "ALTER TABLE vessels ADD COLUMN IF NOT EXISTS followed BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE vessel_registry ADD COLUMN IF NOT EXISTS draught DOUBLE PRECISION",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(16) NOT NULL DEFAULT 'user'",
+            # automated SAR ship detection on stored position checks
+            "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ",
+            "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS hull_detected BOOLEAN",
+            "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS target_count INTEGER",
+            "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS nearest_offset_m DOUBLE PRECISION",
+            "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS chip_key VARCHAR(256)",
             # backfill accounts promoted before the role column existed
             "UPDATE users SET role = 'admin' WHERE is_superuser AND role = 'user'",
         ):
@@ -126,6 +133,8 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(run_gap_detection, "interval", minutes=5)
     scheduler.add_job(run_behavior_scan, "interval", minutes=10)
     scheduler.add_job(run_position_checks, "interval", hours=6)
+    # offset from the checker so fresh checks from a run get analyzed ~1h later
+    scheduler.add_job(run_sar_detection, "interval", hours=6, minutes=60)
     scheduler.add_job(import_all, "cron", hour=4, minute=0)
     scheduler.add_job(sync_slicks, "cron", hour=5, minute=0)
     scheduler.add_job(sync_gfw_events, "interval", hours=6)
@@ -178,6 +187,10 @@ async def _initial_behavior_run() -> None:
         await run_position_checks()
     except Exception:
         logger.exception("Initial position-check run failed")
+    try:
+        await run_sar_detection()
+    except Exception:
+        logger.exception("Initial SAR detection run failed")
 
 
 app = FastAPI(title="Dark Ships - phase 1 MVP", lifespan=lifespan)

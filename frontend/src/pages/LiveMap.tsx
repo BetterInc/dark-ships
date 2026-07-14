@@ -1,7 +1,7 @@
 import maplibregl, { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, usePolling } from '../api/client'
+import { api, apiUrl, usePolling } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
 import type { Cluster, LatestPosition, PositionCheck, Region, TrackPoint, WorldPosition } from '../api/types'
@@ -127,6 +127,27 @@ function SatChecks({ checks }: { checks: PositionCheck[] }) {
             <a href={c.browser_url} target="_blank" rel="noreferrer" style={{ color: 'var(--watch-other)' }}>
               verify hull →
             </a>
+          )}
+          {c.hull_detected != null && (
+            <div style={{ marginTop: 2 }}>
+              {c.hull_detected ? (
+                <span style={{ color: '#34d399' }}>
+                  ■ radar target at claimed spot
+                  {c.nearest_offset_m != null ? ` · ${Math.round(c.nearest_offset_m)} m off` : ''}
+                </span>
+              ) : (
+                <span style={{ color: '#ef4444' }}>□ no radar target within 500 m of claim</span>
+              )}
+              {c.chip_key && (
+                <>
+                  {' · '}
+                  <a href={apiUrl(`/position-checks/${c.id}/chip`)} target="_blank" rel="noreferrer"
+                     style={{ color: 'var(--watch-other)' }}>
+                    chip →
+                  </a>
+                </>
+              )}
+            </div>
           )}
         </div>
       ))}

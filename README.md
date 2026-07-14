@@ -224,8 +224,16 @@ need government-direct swaps. See `LICENSING.md` for the per-source breakdown.
   distinguished from "out of range". Satellite overpasses are a sample (every
   few days), not continuous coverage; that is what satellite AIS (phase 2) is
   for.
-- No ship detection inside SAR imagery yet; human verification via the
-  Copernicus Browser link.
+- Automated SAR ship detection runs on every stored Sentinel-1 position check
+  when `CDSE_SH_CLIENT_ID`/`CDSE_SH_CLIENT_SECRET` are set (free Copernicus
+  Data Space OAuth client): a 3x3 km sigma0 chip around the claimed position
+  is fetched via the Sentinel Hub Process API, a CFAR-style detector marks
+  bright radar targets, and the verdict ("radar target at claimed spot" /
+  "no target within 500 m") plus the chip PNG (stored on MinIO/R2) appear
+  under the satellite cross-checks. It detects *bright targets*, not
+  identified hulls - breakwaters and islets reflect too - so the Copernicus
+  Browser link stays next to every verdict for human confirmation. Without
+  credentials the check remains human-only via that link.
 - Copernicus quicklooks may require a login; the frontend then falls back to
   the browser link only.
 - GFW SAR detection points are not available on the free API tier.
