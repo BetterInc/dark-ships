@@ -907,3 +907,45 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
     bottom: 3.4rem; max-height: 40vh;
   }
 }
+
+/* ── Ship dossier (/ship/:mmsi/details) ───────────────────── */
+.dossier-head {
+  display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+  margin-bottom: 1.2rem;
+}
+.dossier-head h1 { margin-bottom: 0; font-size: 20px; letter-spacing: 0.12em; }
+.dossier-head .spacer { flex: 1; }
+.risk-badge {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  padding: 0.3rem 0.7rem; border-radius: 5px;
+  border: 1px solid var(--shadow-fleet); color: var(--shadow-fleet);
+}
+.risk-badge.high { border-color: var(--narco); color: var(--narco); }
+.dossier-grid {
+  display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+.dossier .card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 1rem 1.2rem;
+  margin-top: 0;
+}
+.dossier .card + .card, .dossier .card-row { margin-top: 1rem; }
+.dossier h2 {
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted); margin: 0 0 0.5rem;
+}
+.dossier .datagrid { grid-template-columns: 110px 1fr; gap: 0.3rem 1.2rem; margin-top: 0.4rem; }
+.dossier .datagrid dd { text-align: left; }
+.dossier .chip-thumb {
+  width: 72px; height: 72px; object-fit: cover; border-radius: 5px;
+  border: 1px solid var(--line); display: block;
+}
+.dossier .map-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 0.9rem; border: 1px solid var(--watch-other);
+  border-radius: 5px; color: var(--watch-other); font-weight: 600;
+  text-decoration: none; font-size: 13px;
+}
+.dossier .map-btn:hover { background: rgba(91, 200, 175, 0.08); }
+.dossier .data-table td, .dossier .data-table th { padding: 0.5rem 0.8rem; }

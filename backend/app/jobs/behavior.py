@@ -1033,15 +1033,16 @@ async def _infer_category(session, mmsi: int, rules: set[str]) -> str:
     sanction_rules = {r for r in rules if r.startswith("risklist_") and r not in mou_rules}
     if not sanction_rules:
         # Behaviour-only vessel with a GFW signal. We only label it "IUU fishing"
-        # when the vessel's OWN AIS ship-type says it is a fishing boat (30-39).
-        # We do NOT call it fishing on GFW's classification alone - if we have no
-        # ship-type of our own, we cannot honestly claim it is a fishing vessel,
-        # so it stays a plain behaviour flag ('other'). The GFW signal (met a
-        # vessel / went dark) is still recorded as evidence either way.
+        # when the vessel's OWN AIS ship-type says it is a FISHING boat: that is
+        # type 30 exactly - 31-39 are towing/dredging/diving/sailing craft (a
+        # loitering dredger is not an illegal-fishing suspect; audit case
+        # DELTA-D). No ship-type of our own = we cannot honestly claim it is a
+        # fishing vessel, so it stays a plain behaviour flag ('other'). The GFW
+        # signal (met a vessel / went dark) stays recorded as evidence either way.
         if rules & {"gfw_encounter", "gfw_ais_gap", "gfw_loitering"}:
             our_type = await session.scalar(
                 select(VesselRegistry.ship_type).where(VesselRegistry.mmsi == mmsi))
-            if our_type is not None and 30 <= our_type <= 39:
+            if our_type == 30:
                 return "iuu_fishing"
         return "other"
 

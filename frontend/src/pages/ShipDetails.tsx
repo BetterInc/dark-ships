@@ -78,23 +78,25 @@ export default function ShipDetails() {
 
   const lp = info.last_pos
   return (
-    <div className="page">
-      <header style={{ display: 'flex', gap: '0.8rem', alignItems: 'baseline', flexWrap: 'wrap' }}>
-        <h1 style={{ marginBottom: 0 }}>{info.name ?? info.mmsi}</h1>
+    <div className="page dossier">
+      <header className="dossier-head">
+        <h1>{info.name ?? info.mmsi}</h1>
         {info.category
           ? <span className={`tag ${info.category}`}>{CATEGORY_LABELS[info.category] ?? info.category}</span>
           : <span className="tag closed">{info.on_watchlist ? 'on watchlist' : 'ordinary traffic'}</span>}
-        <Link to={`/ship/${info.mmsi}`} className="ghost"
-              style={{ padding: '0.35rem 0.8rem', border: '1px solid var(--watch-other)',
-                       borderRadius: 4, color: 'var(--watch-other)', fontWeight: 600,
-                       textDecoration: 'none' }}>
-          ◉ View on map
-        </Link>
+        {info.risk_score != null && info.risk_score > 0 && (
+          <span className={`risk-badge${info.risk_score >= 200 ? ' high' : ''}`}
+                title="summed risk-event score over the last 30 days">
+            RISK {Math.round(info.risk_score)}
+          </span>
+        )}
+        <span className="spacer" />
+        <Link to={`/ship/${info.mmsi}`} className="map-btn">◉ View on map</Link>
       </header>
 
-      <div style={{ display: 'grid', gap: '1.2rem', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', marginTop: '1rem' }}>
-        <section>
-          <h2 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>Identity</h2>
+      <div className="dossier-grid">
+        <section className="card">
+          <h2>Identity</h2>
           <dl className="datagrid">
             <Row label="MMSI"><span className="mono">{info.mmsi}</span></Row>
             {info.imo && <Row label="IMO"><span className="mono">{info.imo}</span></Row>}
@@ -110,8 +112,8 @@ export default function ShipDetails() {
           </dl>
         </section>
 
-        <section>
-          <h2 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>Last position</h2>
+        <section className="card">
+          <h2>Last position</h2>
           {lp ? (
             <dl className="datagrid">
               <Row label="Position"><span className="mono">{lp.lat.toFixed(4)}, {lp.lon.toFixed(4)}</span></Row>
@@ -121,17 +123,12 @@ export default function ShipDetails() {
               <Row label="Source">{lp.source}</Row>
             </dl>
           ) : <p className="empty">No position received yet.</p>}
-          {info.risk_score != null && info.risk_score > 0 && (
-            <dl className="datagrid" style={{ marginTop: '0.6rem' }}>
-              <Row label="Risk score"><b>{Math.round(info.risk_score)}</b></Row>
-            </dl>
-          )}
         </section>
       </div>
 
       {(info.patterns?.length > 0 || info.notes) && (
-        <section style={{ marginTop: '1.4rem' }}>
-          <h2 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>Why it&apos;s watched</h2>
+        <section className="card card-row">
+          <h2>Why it&apos;s watched</h2>
           {info.patterns?.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', margin: '0.5rem 0' }}>
               {info.patterns.map((p) => (
@@ -144,10 +141,8 @@ export default function ShipDetails() {
       )}
 
       {checks.length > 0 && (
-        <section style={{ marginTop: '1.4rem' }}>
-          <h2 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
-            Satellite verification
-          </h2>
+        <section className="card card-row">
+          <h2>Satellite verification</h2>
           <div className="table-scroll">
             <table className="data-table">
               <thead>
@@ -160,8 +155,7 @@ export default function ShipDetails() {
                       {c.chip_key ? (
                         <a href={apiUrl(`/position-checks/${c.id}/chip`)} target="_blank" rel="noreferrer">
                           <img src={apiUrl(`/position-checks/${c.id}/chip`)} alt="SAR chip"
-                               style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line)' }}
-                               loading="lazy" />
+                               className="chip-thumb" loading="lazy" />
                         </a>
                       ) : <span className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>-</span>}
                     </td>
@@ -193,10 +187,8 @@ export default function ShipDetails() {
       )}
 
       {events.length > 0 && (
-        <section style={{ marginTop: '1.4rem' }}>
-          <h2 style={{ fontSize: 14, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>
-            Event timeline
-          </h2>
+        <section className="card card-row">
+          <h2>Event timeline</h2>
           <div className="table-scroll">
             <table className="data-table">
               <thead>
