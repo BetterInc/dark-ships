@@ -57,6 +57,10 @@ function eventDetail(e: RiskEventFeedItem): string {
   const other = d.other_name ?? d.other
   if (typeof other === 'string' && other) bits.push(`with ${other}`)
   else if (typeof other === 'number') bits.push(`with MMSI ${other}`)
+  if (Array.isArray(d.from_) && Array.isArray(d.to)) {
+    const pt = (a: unknown[]) => a.map((n) => Number(n).toFixed(3)).join(', ')
+    bits.push(`${pt(d.from_)} → ${pt(d.to)}`)
+  }
   if (typeof d.implied_kn === 'number') bits.push(`implied ${d.implied_kn} kn`)
   if (typeof d.mismatch_nm === 'number') bits.push(`${d.mismatch_nm} nm off prediction`)
   if (typeof d.lat === 'number' && typeof d.lon === 'number') {
@@ -79,6 +83,7 @@ export default function ShipDetails() {
   const [checks, setChecks] = useState<PositionCheck[]>([])
   const [checksLocked, setChecksLocked] = useState(0)
   const [events, setEvents] = useState<RiskEventFeedItem[]>([])
+  const [openEvt, setOpenEvt] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -218,15 +223,36 @@ export default function ShipDetails() {
                 <tr><th>Event</th><th>What changed</th><th>Severity</th><th>Score</th><th>When</th></tr>
               </thead>
               <tbody>
-                {events.map((e, i) => (
-                  <tr key={`${e.rule}-${e.ts}-${i}`} className={`evt-row ${e.severity}`}>
-                    <td><span className={`evt-dot ${e.severity}`} /> {e.label}</td>
-                    <td className="mono" style={{ fontSize: 12, color: 'var(--text)' }}>{eventDetail(e) || '-'}</td>
-                    <td><span className={`tag evt-sev ${e.severity}`}>{e.severity}</span></td>
-                    <td className="mono">{Math.round(e.score)}</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{fmtUtc(e.ts)}</td>
-                  </tr>
-                ))}
+                {events.map((e, i) => {
+                  const entries = Object.entries((e.detail ?? {}) as Record<string, unknown>)
+                  return [
+                    <tr key={`${e.rule}-${e.ts}-${i}`} className={`evt-row ${e.severity}`}
+                        style={{ cursor: entries.length ? 'pointer' : 'default' }}
+                        title={entries.length ? 'click for full evidence' : undefined}
+                        onClick={() => setOpenEvt(openEvt === i ? null : i)}>
+                      <td><span className={`evt-dot ${e.severity}`} /> {e.label}</td>
+                      <td className="mono" style={{ fontSize: 12, color: 'var(--text)' }}>{eventDetail(e) || '-'}</td>
+                      <td><span className={`tag evt-sev ${e.severity}`}>{e.severity}</span></td>
+                      <td className="mono">{Math.round(e.score)}</td>
+                      <td className="mono" style={{ fontSize: 12 }}>
+                        {fmtUtc(e.ts)}{entries.length > 0 && <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{openEvt === i ? '▾' : '▸'}</span>}
+                      </td>
+                    </tr>,
+                    openEvt === i && entries.length > 0 && (
+                      <tr key={`detail-${i}`}>
+                        <td colSpan={5} style={{ padding: '0.4rem 0.8rem 0.7rem 1.8rem', background: 'var(--panel-raised)' }}>
+                          <dl className="datagrid" style={{ margin: 0 }}>
+                            {entries.map(([k, v]) => (
+                              <Row key={k} label={k.replace(/_$/, '').replace(/_/g, ' ')}>
+                                <span className="mono">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+                              </Row>
+                            ))}
+                          </dl>
+                        </td>
+                      </tr>
+                    ),
+                  ]
+                })}
               </tbody>
             </table>
           </div>
