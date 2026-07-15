@@ -367,6 +367,13 @@ async def rule_impossible_jumps(session, now: datetime) -> list[RiskEvent]:
             speed_kn = haversine_km(a.lat, a.lon, b.lat, b.lon) / 1.852 / dt_h
             if speed_kn <= s.impossible_speed_knots:
                 continue
+            # a jump in ONE coordinate only (pure lat or pure lon) is a bit /
+            # decoding error in that field, not movement - ships travel
+            # diagonally, corrupted integers don't (SeaSpoofFinder, 2026)
+            dlat_km = haversine_km(a.lat, a.lon, b.lat, a.lon)
+            dlon_km = haversine_km(a.lat, a.lon, a.lat, b.lon)
+            if min(dlat_km, dlon_km) < 0.02 * max(dlat_km, dlon_km):
+                continue
             # A single corrupt fix snaps straight back to the real track: the
             # next point C is then nearer the pre-jump point A than the jumped-to
             # point B. A genuine (spoofed) relocation is sustained - C stays near

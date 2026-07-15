@@ -13,7 +13,7 @@ Skips cleanly when CDSE_SH_CLIENT_ID/SECRET are not configured."""
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from ..config import get_settings
 from ..db import SessionLocal
@@ -117,6 +117,23 @@ async def run_sar_detection() -> None:
                 "ML (YOLO/SSDD)" if model_available() else "CFAR fallback")
 
     async with SessionLocal() as session:
+        if get_settings().cold_storage_enabled:
+            # self-heal: a verdict without its evidence chip means the upload
+            # failed at analysis time (e.g. bad storage creds) - requeue those
+            # checks so they re-analyze and the image gets stored
+            requeued = await session.execute(
+                update(PositionCheck)
+                .where(PositionCheck.source == "sentinel-1",
+                       PositionCheck.analyzed_at.isnot(None),
+                       PositionCheck.chip_key.is_(None))
+                .values(analyzed_at=None, hull_detected=None, target_count=None,
+                        nearest_offset_m=None, persistent_target=None,
+                        target_length_m=None, size_match=None))
+            if requeued.rowcount:
+                await session.commit()
+                logger.info("SAR detection: requeued %d verdicts missing their "
+                            "evidence chip", requeued.rowcount)
+
         checks = (await session.execute(
             select(PositionCheck)
             .where(PositionCheck.source == "sentinel-1",

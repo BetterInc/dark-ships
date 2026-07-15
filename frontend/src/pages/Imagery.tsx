@@ -102,10 +102,13 @@ export default function Imagery() {
       <h1>Imagery</h1>
       <p className="sub">
         Every satellite capture matched against a watchlist ship&apos;s position.
-        Sentinel-1 (radar) checks are analyzed automatically: a bright radar
-        target at the claimed spot confirms a hull, and the 3&times;3 km chip
-        shows exactly what the satellite measured. <strong>Zoom to ship</strong>{' '}
-        opens the Copernicus Browser on the coordinate for human verification.
+        Sentinel-1 (radar) checks are verified automatically: an AI ship
+        detector finds hulls in the 3&times;3 km chip around the claimed spot,
+        checks whether the target&apos;s measured size can be that ship (per its
+        AIS dimensions), and compares against a pass weeks earlier to rule out
+        fixed structures. The chip is stored as evidence.{' '}
+        <strong>Zoom to ship</strong> opens the Copernicus Browser on the
+        coordinate for human verification.
       </p>
 
       {error && <p className="error">{error}</p>}

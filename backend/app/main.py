@@ -75,6 +75,8 @@ async def init_db() -> None:
                WHERE a.id > b.id AND a.gap_id = b.gap_id AND a.source = b.source
                  AND substring(a.product_name from '^(?:[^_]+_){7}[^_]+')
                    = substring(b.product_name from '^(?:[^_]+_){7}[^_]+')""",
+            # volumetric coverage guard: heartbeats carry the flush volume
+            "ALTER TABLE ingest_heartbeats ADD COLUMN IF NOT EXISTS n INTEGER",
             # radar-only auto-verify: optical checks can never get a verdict
             # (no S2 detector), so they'd sit "pending" forever. The checker
             # no longer stores them; this clears the ones from before.

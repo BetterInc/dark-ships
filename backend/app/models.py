@@ -243,6 +243,10 @@ class IngestHeartbeat(Base):
     __tablename__ = "ingest_heartbeats"
 
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    # positions flushed since the previous heartbeat: lets the coverage guard
+    # spot PARTIAL outages (full DB, degraded feed) where the process stays
+    # alive but the receiver is effectively deaf. NULL on pre-upgrade rows.
+    n: Mapped[int | None] = mapped_column(Integer)
 
 
 class PositionCheck(Base):

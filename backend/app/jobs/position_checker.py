@@ -22,7 +22,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from ..db import SessionLocal
 from ..geo import haversine_nm, search_polygon_wkt
@@ -36,6 +36,9 @@ MAX_DELTA_MOVING_MIN = 45    # a moving ship must be pinged within this of captu
 MAX_DELTA_ANCHORED_MIN = 12 * 60  # an anchored ship didn't move, so widen a lot
 ANCHORED_SOG = 1.5
 MAX_SEARCH_RADIUS_NM = 120
+# behaviour-only ships earn satellite verification at this risk score;
+# sanctions-listed ships always get it
+MIN_BEHAVIOUR_SCORE_FOR_SAR = 100.0
 
 _RING_RE = re.compile(r"\(\(([^()]+)\)\)")
 
@@ -75,8 +78,16 @@ async def run_position_checks() -> None:
     scene_cache: dict[tuple[int, int], list] = {}
 
     async with SessionLocal() as session:
+        # Satellite verification is budgeted (the SAR job analyzes ~600 checks
+        # a day): sanctions-listed ships always earn it; behaviour-only
+        # ('other') ships must accumulate real suspicion first. Highest risk
+        # gets mined first so the worst offenders are never starved by volume.
         vessels = (await session.execute(
-            select(Vessel).where(Vessel.active.is_(True))
+            select(Vessel).where(
+                Vessel.active.is_(True),
+                or_(Vessel.category != "other",
+                    Vessel.risk_score >= MIN_BEHAVIOUR_SCORE_FOR_SAR))
+            .order_by(Vessel.risk_score.desc())
         )).scalars().all()
 
         for vessel in vessels:

@@ -227,12 +227,16 @@ need government-direct swaps. See `LICENSING.md` for the per-source breakdown.
 - Automated SAR ship detection runs on every stored Sentinel-1 position check
   when `CDSE_SH_CLIENT_ID`/`CDSE_SH_CLIENT_SECRET` are set (free Copernicus
   Data Space OAuth client): a 3x3 km sigma0 chip around the claimed position
-  is fetched via the Sentinel Hub Process API, a CFAR-style detector marks
-  bright radar targets, and the verdict ("radar target at claimed spot" /
-  "no target within 500 m") plus the chip PNG (stored on MinIO locally, Wasabi in prod) appear
-  under the satellite cross-checks. It detects *bright targets*, not
-  identified hulls - breakwaters and islets reflect too - so the Copernicus
-  Browser link stays next to every verdict for human confirmation. Without
+  is fetched via the Sentinel Hub Process API and a YOLOv11 ship detector
+  (SSDD-trained, ONNX, pulled from the S3 bucket at first use; classical CFAR
+  as fallback) finds hulls in it. A detection near the claim only confirms
+  the ship when its measured length is plausible for the vessel's AIS
+  dimensions, and confirmed targets are cross-checked against a pass weeks
+  earlier (a "hull" that never moves is a structure or a long-anchored ship,
+  flagged as persistent). Verdicts plus the chip PNG (MinIO locally, Wasabi
+  in prod) appear under the satellite cross-checks; unjudgeable chips delete
+  their check, orphaned chips are swept every run. The Copernicus Browser
+  link stays next to every verdict for human confirmation. Without
   credentials the check remains human-only via that link.
 - Copernicus quicklooks may require a login; the frontend then falls back to
   the browser link only.

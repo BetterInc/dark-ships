@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 
 import websockets
-from sqlalchemy import insert
+from sqlalchemy import func, insert
 
 from ..config import get_settings
 from ..db import SessionLocal
@@ -98,6 +98,7 @@ class PositionBuffer:
         self._rows: list[dict] = []
         self._lock = asyncio.Lock()
         self._last_heartbeat: datetime | None = None
+        self._hb_rows = 0  # positions flushed since the last heartbeat row
 
     async def add(self, row: dict) -> None:
         async with self._lock:
@@ -133,12 +134,17 @@ class PositionBuffer:
                     ))
                     now = datetime.now(timezone.utc)
                     minute = now.replace(second=0, microsecond=0)
+                    self._hb_rows += len(rows)
                     if self._last_heartbeat != minute:
-                        await session.execute(
-                            pg_insert(IngestHeartbeat).values(ts=minute)
-                            .on_conflict_do_nothing(index_elements=["ts"])
-                        )
+                        # heartbeat carries the volume flushed since the last
+                        # one - the coverage guard's "were we really listening"
+                        hb = pg_insert(IngestHeartbeat).values(ts=minute, n=self._hb_rows)
+                        await session.execute(hb.on_conflict_do_update(
+                            index_elements=["ts"],
+                            set_={"n": func.coalesce(IngestHeartbeat.n, 0) + hb.excluded.n},
+                        ))
                         self._last_heartbeat = minute
+                        self._hb_rows = 0
                     await session.commit()
             except Exception:
                 logger.exception("Failed to write %d positions", len(rows))
