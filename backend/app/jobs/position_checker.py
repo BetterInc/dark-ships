@@ -135,6 +135,12 @@ async def run_position_checks() -> None:
             }
             added = 0
             for scene in scenes:
+                # Radar only: the auto-verify pipeline (jobs/sar_detector.py)
+                # can only judge Sentinel-1 chips; optical scenes would sit
+                # "pending" forever, so we don't store them as checks. (Gap
+                # scenes keep both sources - they're for humans/quicklooks.)
+                if scene["source"] != "sentinel-1":
+                    continue
                 if scene["product_id"] in existing:
                     continue
                 if anchor_pos is not None:
