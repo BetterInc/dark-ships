@@ -201,7 +201,7 @@ export default function ShipDetails() {
               <tbody>
                 {events.map((e, i) => {
                   const fmtVal = (v: unknown): string => {
-                    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(4)
+                    if (typeof v === 'number') return String(parseFloat(v.toFixed(4)))
                     if (Array.isArray(v)) return v.map(fmtVal).join(', ')
                     return String(v)
                   }
