@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, apiUrl } from '../api/client'
+import RadarVerdict from '../components/RadarVerdict'
 import { CATEGORY_LABELS } from '../api/types'
 import type { PositionCheck, RiskEventFeedItem } from '../api/types'
 
@@ -13,6 +14,8 @@ interface VesselInfo {
   ship_type: string | null
   destination: string | null
   flag: string | null
+  length_m: number | null
+  beam_m: number | null
   first_seen: string | null
   last_seen: string | null
   on_watchlist: boolean
@@ -41,17 +44,9 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 function CheckVerdict({ c }: { c: PositionCheck }) {
   if (c.hull_detected == null) return <span className="mono" style={{ color: 'var(--muted)' }}>-</span>
-  if (!c.hull_detected) return <span style={{ color: '#ef4444' }}>□ no target</span>
-  return c.persistent_target ? (
-    <span style={{ color: '#f2b134' }}
-          title="the same spot was bright on a pass weeks earlier - fixed structure or a long-anchored ship">
-      ■ persistent target{c.nearest_offset_m != null ? ` · ${Math.round(c.nearest_offset_m)} m` : ''}
-    </span>
-  ) : (
-    <span style={{ color: '#34d399' }}>
-      ■ target at claim{c.nearest_offset_m != null ? ` · ${Math.round(c.nearest_offset_m)} m` : ''}
-    </span>
-  )
+  return <RadarVerdict hull={c.hull_detected} persistent={c.persistent_target}
+                       offsetM={c.nearest_offset_m} targetLengthM={c.target_length_m}
+                       sizeMatch={c.size_match} />
 }
 
 // Compact ship dossier: the panel's short info plus the full evidence trail
@@ -102,6 +97,9 @@ export default function ShipDetails() {
             {info.callsign && <Row label="Callsign"><span className="mono">{info.callsign}</span></Row>}
             {info.ship_type && <Row label="Type">{info.ship_type}</Row>}
             {info.flag && <Row label="Flag">{info.flag}</Row>}
+            {info.length_m != null && (
+              <Row label="Size">{Math.round(info.length_m)} m{info.beam_m != null ? ` × ${Math.round(info.beam_m)} m` : ''}</Row>
+            )}
             {info.destination && <Row label="Destination">{info.destination}</Row>}
             {info.first_seen && <Row label="First seen">{fmtUtc(info.first_seen)}</Row>}
             {info.last_seen && <Row label="Last seen">{fmtUtc(info.last_seen)}</Row>}

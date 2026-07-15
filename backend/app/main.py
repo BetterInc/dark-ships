@@ -50,6 +50,10 @@ async def init_db() -> None:
             "ALTER TABLE vessels ADD COLUMN IF NOT EXISTS risk_score DOUBLE PRECISION NOT NULL DEFAULT 0",
             "ALTER TABLE vessels ADD COLUMN IF NOT EXISTS followed BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE vessel_registry ADD COLUMN IF NOT EXISTS draught DOUBLE PRECISION",
+            "ALTER TABLE vessel_registry ADD COLUMN IF NOT EXISTS length_m DOUBLE PRECISION",
+            "ALTER TABLE vessel_registry ADD COLUMN IF NOT EXISTS beam_m DOUBLE PRECISION",
+            "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS target_length_m DOUBLE PRECISION",
+            "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS size_match BOOLEAN",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(16) NOT NULL DEFAULT 'user'",
             # automated SAR ship detection on stored position checks
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ",
@@ -60,6 +64,17 @@ async def init_db() -> None:
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS chip_key VARCHAR(256)",
             # backfill accounts promoted before the role column existed
             "UPDATE users SET role = 'admin' WHERE is_superuser AND role = 'user'",
+            # one-time cleanup: the catalogue used to list each capture twice
+            # (plain + _COG processing); search_scenes now dedupes, this clears
+            # rows stored before that. Idempotent - matches nothing once clean.
+            """DELETE FROM position_checks a USING position_checks b
+               WHERE a.id > b.id AND a.mmsi = b.mmsi AND a.source = b.source
+                 AND substring(a.product_name from '^(?:[^_]+_){7}[^_]+')
+                   = substring(b.product_name from '^(?:[^_]+_){7}[^_]+')""",
+            """DELETE FROM sar_matches a USING sar_matches b
+               WHERE a.id > b.id AND a.gap_id = b.gap_id AND a.source = b.source
+                 AND substring(a.product_name from '^(?:[^_]+_){7}[^_]+')
+                   = substring(b.product_name from '^(?:[^_]+_){7}[^_]+')""",
         ):
             await conn.execute(text(ddl))
         # promote already-registered admin accounts (idempotent; new signups

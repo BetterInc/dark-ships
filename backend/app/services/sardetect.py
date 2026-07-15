@@ -46,6 +46,10 @@ class Detection:
     peak_db: float
     y_px: float = 0.0  # component centroid, for cross-pass comparison
     x_px: float = 0.0
+    # measured size of the target (CFAR: bright-core extent so sidelobe
+    # crosses don't inflate it; ML: detection-box long side)
+    length_m: float | None = None
+    confidence: float | None = None  # ML only; CFAR detections carry None
 
 
 @dataclass
@@ -121,13 +125,30 @@ def detect_ships(chip, m_per_px: float) -> ChipResult:
         mx = sum(p[1] for p in comp) / len(comp)
         offset = float(((my - cy) ** 2 + (mx - cx) ** 2) ** 0.5) * m_per_px
         peak = float(max(db[y, x] for y, x in comp))
+        # size from the bright core (within 10 dB of the peak): very strong
+        # reflectors bloom a sidelobe cross that would fake a kilometre-long
+        # "hull" if we measured the whole thresholded component
+        core = np.array([(y, x) for y, x in comp if db[y, x] >= peak - 10.0])
+        d2 = ((core[:, None, :] - core[None, :, :]) ** 2).sum(axis=2)
+        length = (math.sqrt(float(d2.max())) + 1.0) * m_per_px
         detections.append(Detection(offset_m=round(offset, 1),
                                     area_px=len(comp), peak_db=round(peak, 1),
-                                    y_px=my, x_px=mx))
+                                    y_px=my, x_px=mx,
+                                    length_m=round(length, 1)))
 
     detections.sort(key=lambda d: d.offset_m)
     return ChipResult(valid=True, detections=detections,
                       clutter_db=round(10.0 * math.log10(med), 1))
+
+
+def size_plausible(target_length_m: float | None, ship_length_m: float) -> bool:
+    """Could a target of this measured size be this ship? Bounds are generous:
+    SAR smearing/sidelobes inflate, azimuth ambiguity and partial returns
+    shrink - the gate only rejects the clearly impossible (a 30 m blob
+    'confirming' a 250 m tanker, or a giant return for a small trawler)."""
+    if target_length_m is None:
+        return True  # nothing measured - don't reject on missing data
+    return (0.4 * ship_length_m - 10.0) <= target_length_m <= (2.0 * ship_length_m + 60.0)
 
 
 PERSIST_RADIUS_M = 150.0  # same-spot tolerance across passes (geocoding jitter)

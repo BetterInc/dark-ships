@@ -1,10 +1,10 @@
 """Cold tier: export old position partitions to Parquet on S3-compatible
-storage (MinIO locally, Cloudflare R2 in prod) and query them back.
+storage (MinIO locally, Wasabi in prod) and query them back.
 
 DuckDB does the heavy lifting: it reads a Postgres partition via the `postgres`
 extension and writes compressed Parquet straight to S3 via `httpfs`. The same
 engine reads that Parquet back and can UNION it with the live (hot) Postgres
-table, so a single query spans hot + cold. R2 and MinIO are both S3-compatible,
+table, so a single query spans hot + cold. Wasabi and MinIO are both S3-compatible,
 so only the endpoint and keys differ.
 
 DuckDB calls are blocking, so the async helpers hop to a worker thread.

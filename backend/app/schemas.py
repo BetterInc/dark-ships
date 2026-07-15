@@ -122,6 +122,8 @@ class PositionCheckOut(BaseModel):
     target_count: int | None = None
     nearest_offset_m: float | None = None
     persistent_target: bool | None = None
+    target_length_m: float | None = None
+    size_match: bool | None = None
     chip_key: str | None = None  # set = chip PNG available at /api/position-checks/{id}/chip
 
 

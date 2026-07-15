@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiUrl, usePolling } from '../api/client'
 import Pagination from '../components/Pagination'
+import RadarVerdict from '../components/RadarVerdict'
 
 interface ImageryItem {
   kind: 'position_check' | 'gap_scene'
@@ -21,6 +22,8 @@ interface ImageryItem {
   target_count: number | null
   nearest_offset_m: number | null
   persistent_target: boolean | null
+  target_length_m: number | null
+  size_match: boolean | null
   chip_key: string | null
 }
 
@@ -70,20 +73,9 @@ function Thumb({ item }: { item: ImageryItem }) {
 
 function Verdict({ item }: { item: ImageryItem }) {
   if (item.kind !== 'position_check') return <span className="mono" style={{ color: 'var(--muted)' }}>-</span>
-  if (item.hull_detected == null) {
-    return <span className="mono" style={{ color: 'var(--muted)' }}>pending</span>
-  }
-  if (!item.hull_detected) return <span style={{ color: '#ef4444' }}>□ no target</span>
-  return item.persistent_target ? (
-    <span style={{ color: '#f2b134' }}
-          title="the same spot was bright on a pass weeks earlier - fixed structure or a long-anchored ship">
-      ■ persistent target{item.nearest_offset_m != null ? ` · ${Math.round(item.nearest_offset_m)} m` : ''}
-    </span>
-  ) : (
-    <span style={{ color: '#34d399' }}>
-      ■ target at claim{item.nearest_offset_m != null ? ` · ${Math.round(item.nearest_offset_m)} m` : ''}
-    </span>
-  )
+  return <RadarVerdict hull={item.hull_detected} persistent={item.persistent_target}
+                       offsetM={item.nearest_offset_m} targetLengthM={item.target_length_m}
+                       sizeMatch={item.size_match} />
 }
 
 export default function Imagery() {

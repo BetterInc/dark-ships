@@ -77,15 +77,15 @@ class Settings(BaseSettings):
         return self.run_mode in ("web", "all")
 
     # Cold tier: position partitions older than positions_retention_days are
-    # exported to Parquet on S3-compatible storage (MinIO locally, Cloudflare R2
+    # exported to Parquet on S3-compatible storage (MinIO locally, Wasabi
     # in prod) and then dropped from Postgres. Same code for both - only the
     # endpoint/keys change. Leave blank to disable (partitions are then kept,
     # never dropped, so no data is lost silently).
-    s3_endpoint: str = ""            # http://minio:9000  |  https://<acct>.r2.cloudflarestorage.com
+    s3_endpoint: str = ""            # http://minio:9000  |  https://s3.eu-central-2.wasabisys.com
     s3_bucket: str = ""              # e.g. darkships-cold
     s3_access_key_id: str = ""
     s3_secret_access_key: str = ""
-    s3_region: str = "auto"          # "auto" for R2; any value (e.g. us-east-1) for MinIO
+    s3_region: str = "auto"          # any value works for MinIO; match the endpoint region for Wasabi
 
     @property
     def cold_storage_enabled(self) -> bool:
@@ -96,9 +96,12 @@ class Settings(BaseSettings):
     # Sentinel Hub OAuth client: dataspace.copernicus.eu -> account settings ->
     # OAuth clients. Leave blank to keep human-only verification via the
     # Copernicus Browser links. Detected chips are stored on the same
-    # S3-compatible storage as the cold tier (MinIO locally, R2 in prod).
+    # S3-compatible storage as the cold tier (MinIO locally, Wasabi in prod).
     cdse_sh_client_id: str = ""
     cdse_sh_client_secret: str = ""
+    # ONNX ship-detection model for the chips (YOLOv11m/SSDD). When the file
+    # is missing the detector falls back to the classical CFAR thresholder.
+    sar_model_path: str = "models/sar_ship_yolov11m.onnx"
 
     @property
     def sar_detection_enabled(self) -> bool:

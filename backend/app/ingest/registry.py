@@ -112,7 +112,9 @@ class RegistryTracker:
     async def observe_static(self, mmsi: int, ts: datetime, name: str | None,
                              imo: str | None, callsign: str | None,
                              ship_type: int | None, destination: str | None,
-                             draught: float | None = None) -> None:
+                             draught: float | None = None,
+                             length_m: float | None = None,
+                             beam_m: float | None = None) -> None:
         fresh = {"name": name, "imo": imo, "callsign": callsign}
         async with self._lock:
             entry = self._cache.get(mmsi)
@@ -198,6 +200,13 @@ class RegistryTracker:
             dest = (destination or "").strip() or None
             if dest is not None:
                 entry["destination"] = dest
+            # AIS dimensions: plausibility-gated like draught (unset defaults
+            # and garbage are common); only overwrite when the message carries
+            # a sane value, so a flapping zero can't erase a known size.
+            if length_m is not None and 5.0 <= length_m <= 470.0:
+                entry["length_m"] = length_m
+            if beam_m is not None and 1.5 <= beam_m <= 80.0:
+                entry["beam_m"] = beam_m
 
             up = self._upserts.setdefault(mmsi, {"mmsi": mmsi})
             up.update({
@@ -211,6 +220,10 @@ class RegistryTracker:
                 up["destination"] = entry["destination"]
             if valid_draught(entry.get("draught")):
                 up["draught"] = entry["draught"]
+            if entry.get("length_m"):
+                up["length_m"] = entry["length_m"]
+            if entry.get("beam_m"):
+                up["beam_m"] = entry["beam_m"]
             up.setdefault("first_seen", ts)
 
     async def flush_forever(self) -> None:

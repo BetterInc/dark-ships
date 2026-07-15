@@ -229,7 +229,7 @@ need government-direct swaps. See `LICENSING.md` for the per-source breakdown.
   Data Space OAuth client): a 3x3 km sigma0 chip around the claimed position
   is fetched via the Sentinel Hub Process API, a CFAR-style detector marks
   bright radar targets, and the verdict ("radar target at claimed spot" /
-  "no target within 500 m") plus the chip PNG (stored on MinIO/R2) appear
+  "no target within 500 m") plus the chip PNG (stored on MinIO locally, Wasabi in prod) appear
   under the satellite cross-checks. It detects *bright targets*, not
   identified hulls - breakwaters and islets reflect too - so the Copernicus
   Browser link stays next to every verdict for human confirmation. Without

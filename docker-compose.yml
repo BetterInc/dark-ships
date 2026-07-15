@@ -23,7 +23,7 @@ services:
     restart: unless-stopped
 
   # Local S3-compatible object storage for the cold tier (stands in for
-  # Cloudflare R2 in prod - same code, only the endpoint/keys change).
+  # Wasabi in prod - same code, only the endpoint/keys change).
   minio:
     image: minio/minio
     command: server /data --console-address ":9001"
@@ -56,7 +56,7 @@ services:
       MAIL_HOST: mailpit
       MAIL_PORT: 1025
       MAIL_FROM: noreply@darkships.local
-      # Cold tier -> local MinIO (swap these for R2 creds in prod)
+      # Cold tier -> local MinIO (swap these for Wasabi creds in prod)
       S3_ENDPOINT: http://minio:9000
       S3_BUCKET: darkships-cold
       S3_ACCESS_KEY_ID: minioadmin

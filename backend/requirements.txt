@@ -19,7 +19,8 @@ pytz>=2024.1
 # counters across web replicas. Add limits[async-redis] when doing so.
 limits>=3.13
 # SAR ship detection: chip fetch (tifffile decodes the float32 TIFF - Pillow
-# garbles its float predictor), CFAR thresholding (numpy), chips on MinIO/R2 (boto3)
+# garbles its float predictor), CFAR thresholding (numpy), chips on MinIO/Wasabi (boto3)
 numpy>=1.26
 tifffile>=2024.2
 boto3>=1.34
+onnxruntime>=1.17

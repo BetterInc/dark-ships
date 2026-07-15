@@ -85,6 +85,8 @@ async def vessel_info(mmsi: int, session: AsyncSession = Depends(get_session)):
         "ship_type": ship_type_label(reg.ship_type) if reg else None,
         "destination": reg.destination if reg else None,
         "flag": v.flag if v else None,
+        "length_m": reg.length_m if reg else None,
+        "beam_m": reg.beam_m if reg else None,
         "first_seen": reg.first_seen if reg else None,
         "last_seen": reg.last_seen if reg else None,
         "on_watchlist": bool(v and v.active),

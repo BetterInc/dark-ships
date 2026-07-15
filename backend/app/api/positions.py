@@ -414,7 +414,7 @@ async def clusters(session: AsyncSession = Depends(get_session)):
 @router.get("/position-checks/{check_id}/chip")
 async def position_check_chip(check_id: int, session: AsyncSession = Depends(get_session)):
     """The stored SAR chip (grayscale sigma0 PNG) behind an automated hull
-    verdict - proxied from MinIO/R2 so the bucket itself stays private."""
+    verdict - proxied from MinIO/Wasabi so the bucket itself stays private."""
     from fastapi import HTTPException
 
     from ..services.chipstore import get_chip
@@ -435,12 +435,12 @@ async def position_history(
     start: datetime | None = None,
     end: datetime | None = None,
     # public + unauthenticated: bound the window so a single request can't fan
-    # a year+ of cold-tier (S3/R2) reads. Deep historical pulls belong behind
+    # a year+ of cold-tier (S3/Wasabi) reads. Deep historical pulls belong behind
     # an authenticated/admin tool, not this open endpoint.
     days: float = Query(365, le=365),
 ):
     """Full track for one vessel, spanning the hot (Postgres) and cold (Parquet
-    on S3/R2) tiers transparently. Defaults to the last `days` days."""
+    on S3/Wasabi) tiers transparently. Defaults to the last `days` days."""
     from ..services import cold
 
     now = datetime.now(timezone.utc)

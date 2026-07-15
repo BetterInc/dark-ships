@@ -89,7 +89,7 @@ class Vessel(Base):
 class Position(Base):
     # Monthly RANGE-partitioned on `ts` (see jobs/partitions.py). Retention is a
     # DROP of whole month-partitions (instant, no DELETE churn); partitions older
-    # than the hot window are first exported to Parquet on S3/R2 (services/cold.py)
+    # than the hot window are first exported to Parquet on S3/Wasabi (services/cold.py)
     # so long history stays cheap and queryable. Postgres requires the partition
     # key (ts) to be part of the primary key, hence the composite (id, ts).
     __tablename__ = "positions"
@@ -170,6 +170,10 @@ class VesselRegistry(Base):
     # Last valid MaximumStaticDraught (metres) seen in ShipStaticData. A tanker
     # whose draught swings laden<->ballast offshore has transferred cargo at sea.
     draught: Mapped[float | None] = mapped_column(Float)
+    # From the AIS Dimension block (A+B / C+D): lets the SAR detector check a
+    # radar target's measured size against the ship it's supposed to be.
+    length_m: Mapped[float | None] = mapped_column(Float)
+    beam_m: Mapped[float | None] = mapped_column(Float)
 
 
 class DraughtChange(Base):
@@ -270,6 +274,10 @@ class PositionCheck(Base):
     # target also bright on a pass weeks earlier -> fixed structure or a very
     # long-anchored ship (NULL = no usable reference pass)
     persistent_target: Mapped[bool | None] = mapped_column(Boolean)
+    # measured length of the matched target (bright-core extent) and whether it
+    # is size-plausible for THIS ship's AIS dimensions (NULL = dims unknown)
+    target_length_m: Mapped[float | None] = mapped_column(Float)
+    size_match: Mapped[bool | None] = mapped_column(Boolean)
     chip_key: Mapped[str | None] = mapped_column(String(256))   # S3 object key of the PNG
 
     __table_args__ = (

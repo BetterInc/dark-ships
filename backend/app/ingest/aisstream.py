@@ -211,6 +211,12 @@ class AisStreamConnection:
                 if mmsi:
                     from .registry import valid_imo
                     imo = str(static.get("ImoNumber") or "")
+                    # AIS Dimension block: A=to bow, B=to stern, C=to port,
+                    # D=to starboard (metres from the GPS antenna). A+B is the
+                    # ship's length - what the SAR size check compares against.
+                    dim = static.get("Dimension") or {}
+                    length = (dim.get("A") or 0) + (dim.get("B") or 0)
+                    beam = (dim.get("C") or 0) + (dim.get("D") or 0)
                     await self.registry.observe_static(
                         mmsi=mmsi,
                         ts=_parse_time_utc(meta.get("time_utc", "")),
@@ -220,6 +226,8 @@ class AisStreamConnection:
                         ship_type=static.get("Type"),
                         destination=static.get("Destination"),
                         draught=static.get("MaximumStaticDraught"),
+                        length_m=length or None,
+                        beam_m=beam or None,
                     )
                 continue
 

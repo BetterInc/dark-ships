@@ -2,6 +2,7 @@ import maplibregl, { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, apiUrl, usePolling } from '../api/client'
+import RadarVerdict from '../components/RadarVerdict'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
 import type { Cluster, LatestPosition, PositionCheck, Region, TrackPoint, WorldPosition } from '../api/types'
@@ -130,22 +131,9 @@ function SatChecks({ checks }: { checks: PositionCheck[] }) {
           )}
           {c.hull_detected != null && (
             <div style={{ marginTop: 2 }}>
-              {c.hull_detected ? (
-                c.persistent_target ? (
-                  <span style={{ color: '#f2b134' }}
-                        title="the same spot was bright on a pass weeks earlier - fixed structure or a long-anchored ship">
-                    ■ persistent target at claimed spot
-                    {c.nearest_offset_m != null ? ` · ${Math.round(c.nearest_offset_m)} m off` : ''}
-                  </span>
-                ) : (
-                  <span style={{ color: '#34d399' }}>
-                    ■ radar target at claimed spot
-                    {c.nearest_offset_m != null ? ` · ${Math.round(c.nearest_offset_m)} m off` : ''}
-                  </span>
-                )
-              ) : (
-                <span style={{ color: '#ef4444' }}>□ no radar target within 500 m of claim</span>
-              )}
+              <RadarVerdict hull={c.hull_detected} persistent={c.persistent_target}
+                            offsetM={c.nearest_offset_m} targetLengthM={c.target_length_m}
+                            sizeMatch={c.size_match} />
               {c.chip_key && (
                 <>
                   {' · '}
