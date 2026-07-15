@@ -24,6 +24,7 @@ from .ingest.aisstream import start_ingest
 from .jobs.behavior import run_behavior_scan
 from .jobs.gap_detector import run_gap_detection
 from .jobs.partitions import ensure_partitions
+from .jobs.coverage import sweep_outage_gap_events
 from .jobs.position_checker import run_position_checks
 from .jobs.retention import prune_positions
 from .jobs.sar_detector import run_sar_detection
@@ -158,6 +159,8 @@ async def lifespan(app: FastAPI):
     # offset from the checker so fresh checks from a run get analyzed ~1h later
     scheduler.add_job(run_sar_detection, "interval", hours=6, minutes=60)
     scheduler.add_job(import_all, "cron", hour=4, minute=0)
+    # daily: unflag ships whose "gaps" were OUR outage, not their behaviour
+    scheduler.add_job(sweep_outage_gap_events, "cron", hour=3, minute=45)
     scheduler.add_job(sync_slicks, "cron", hour=5, minute=0)
     scheduler.add_job(sync_gfw_events, "interval", hours=6)
     scheduler.add_job(prune_positions, "cron", hour=3, minute=30)
@@ -213,6 +216,12 @@ async def _initial_behavior_run() -> None:
         await run_sar_detection()
     except Exception:
         logger.exception("Initial SAR detection run failed")
+    # after everything else: clean gap events minted during receiver outages
+    # (a fresh deploy after a DB-full incident heals itself on first boot)
+    try:
+        await sweep_outage_gap_events()
+    except Exception:
+        logger.exception("Initial coverage sweep failed")
 
 
 app = FastAPI(title="Dark Ships - phase 1 MVP", lifespan=lifespan)

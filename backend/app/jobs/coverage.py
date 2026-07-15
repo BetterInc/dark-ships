@@ -71,3 +71,86 @@ async def covered_since(session) -> datetime:
 async def prune_heartbeats(session) -> None:
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     await session.execute(delete(IngestHeartbeat).where(IngestHeartbeat.ts < cutoff))
+
+
+# ---- retroactive outage sweep --------------------------------------------
+
+SWEEP_LOOKBACK_DAYS = 30     # match the scoring window - older events age out
+SWEEP_FLOOR_RATIO = 0.4      # hour below this fraction of median volume = deaf
+SWEEP_RULES = ("regional_gap", "drift_mismatch", "midsea_appearance")
+
+
+async def sweep_outage_gap_events() -> None:
+    """Daily self-heal: delete gap-family risk events whose evidence window
+    overlaps an hour in which WE were deaf (hourly global position volume
+    far below the recent median - full DB, degraded feed, downtime). The
+    silence of one ship proves nothing when every ship went silent; scores
+    recompute on the next behaviour scan, so wrongly-greened ships demote
+    on their own."""
+    import json
+
+    from sqlalchemy import text
+
+    from ..db import SessionLocal
+
+    now = datetime.now(timezone.utc)
+    async with SessionLocal() as session:
+        counts = {h: n for h, n in await session.execute(text(
+            "SELECT date_trunc('hour', ts) AS h, count(*) AS n FROM positions "
+            "WHERE ts > now() - interval '30 days' GROUP BY 1"))}
+        if len(counts) < 24:
+            return  # not enough history to define "normal"
+        med = median(counts.values())
+        floor = SWEEP_FLOOR_RATIO * med
+        start, end = min(counts), max(counts)
+        deaf = set()
+        h = start
+        while h <= end:
+            if counts.get(h, 0) < floor:
+                deaf.add(h)
+            h += timedelta(hours=1)
+        if not deaf:
+            return
+
+        def window_overlaps_deaf(begin: datetime, until: datetime) -> bool:
+            h = begin.replace(minute=0, second=0, microsecond=0)
+            while h <= until:
+                if h in deaf:
+                    return True
+                h += timedelta(hours=1)
+            return False
+
+        evts = (await session.execute(text(
+            "SELECT id, rule, ts, details FROM risk_events "
+            "WHERE rule = ANY(:rules) AND ts > :cutoff",
+        ).bindparams(rules=list(SWEEP_RULES),
+                     cutoff=now - timedelta(days=SWEEP_LOOKBACK_DAYS)))).all()
+        doomed = []
+        for eid, rule, ts, details in evts:
+            try:
+                d = json.loads(details) if details else {}
+            except ValueError:
+                d = {}
+            if rule == "regional_gap":
+                raw = d.get("last_ts")
+                begin = (datetime.fromisoformat(raw) if raw
+                         else ts - timedelta(hours=12))
+            elif rule == "drift_mismatch":
+                begin = ts - timedelta(hours=float(d.get("hours", 12)))
+            else:  # midsea_appearance: appearing right after deafness = recovery
+                begin = ts - timedelta(hours=2)
+            if begin.tzinfo is None:
+                begin = begin.replace(tzinfo=timezone.utc)
+            if window_overlaps_deaf(begin, ts):
+                doomed.append(eid)
+        for i in range(0, len(doomed), 5000):
+            await session.execute(
+                text("DELETE FROM risk_events WHERE id = ANY(:ids)"),
+                {"ids": doomed[i:i + 5000]})
+        await session.commit()
+        if doomed:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Coverage sweep: deleted %d gap-family events overlapping %d "
+                "deaf hours (receiver outage, not ship behaviour)",
+                len(doomed), len(deaf))
