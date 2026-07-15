@@ -100,18 +100,6 @@ function PatternTags({ patterns }: { patterns: string[] }) {
   )
 }
 
-function WatchNotes({ notes }: { notes: string | null | undefined }) {
-  if (!notes) return null
-  return (
-    <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
-      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.3rem' }}>
-        Why it&apos;s watched
-      </div>
-      <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text)' }}>{notes}</div>
-    </div>
-  )
-}
-
 // Set of mmsis already on the logged-in user's watchlist, fetched once so
 // followed ships show a done state instead of an add button.
 function useFollowed(): { followed: Set<number>; addFollowed: (mmsi: number) => void } {
@@ -802,7 +790,6 @@ export default function LiveMap() {
             )}
           </dl>
           <PatternTags patterns={selected.patterns ?? []} />
-          <WatchNotes notes={selected.notes} />
           <Link to={`/ship/${selected.mmsi}/details`}
                 style={{ display: 'inline-block', marginTop: '0.7rem', color: 'var(--watch-other)', fontWeight: 600, fontSize: 13 }}>
             Full profile →
@@ -840,7 +827,6 @@ export default function LiveMap() {
             )}
           </dl>
           <PatternTags patterns={selectedAmbient.patterns ?? []} />
-          <WatchNotes notes={selectedAmbient.notes} />
           {!selectedAmbient.on_watchlist && (
             <p style={{ marginTop: '0.7rem', fontSize: 12, color: 'var(--muted)' }}>
               Not flagged - no sanctions match or suspicious pattern detected. It only
