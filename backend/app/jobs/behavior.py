@@ -1082,8 +1082,15 @@ async def _infer_category(session, mmsi: int, rules: set[str]) -> str:
 # This keeps the watchlist to vessels you can actually trust are worth watching.
 MOU_DETENTION_RULES = {"risklist_parismou", "risklist_tokyomou",
                        "risklist_blackseamou", "risklist_abujamou"}
+# Signals that qualify a behaviour-only ship for the public map. NOTE:
+# impossible_jump is deliberately NOT here - a prod audit (Jul 2026) found a
+# single lone jump had put 1,206 ships (73% of all behaviour flags) on the
+# map, which is receiver/timestamp noise at fleet scale, not 1,206 spoofers.
+# A jump still scores and corroborates; it only promotes when a SECOND
+# independent hard signal (identity manipulation, cloning, draught change)
+# says the ship is worth watching.
 HARD_RULES = {"identity_change", "mmsi_collision", "circle_spoofing",
-              "impossible_jump", "identity_integrity", "draught_change"}
+              "identity_integrity", "draught_change"}
 
 
 def _placeholder_identity(mmsi: int) -> bool:

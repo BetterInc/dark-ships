@@ -471,12 +471,20 @@ export default function LiveMap() {
       const cappedRisk: maplibregl.ExpressionSpecification = ['min', ['get', 'risk'], 150]
 
       map.addSource('vessels', { type: 'geojson', data: vesselsToGeoJSON([]) })
+      // Progressive disclosure (the MarineTraffic/GFW pattern): at world zoom
+      // only sanctions ships and heavy behaviour offenders (risk >= 100) show;
+      // the full behaviour-flag layer fades in from regional zoom (>= 6).
+      const zoomTier: maplibregl.ExpressionSpecification = ['any',
+        ['!=', ['get', 'kind'], 'other'],
+        ['>=', ['get', 'risk'], 100],
+        ['>=', ['zoom'], 6],
+      ]
       // risk halo: a glow that grows with the score, so the worst ship pulls the eye first
       map.addLayer({
         id: 'vessels-halo',
         type: 'circle',
         source: 'vessels',
-        filter: ['all', ['get', 'watchlist'], ['>', ['get', 'risk'], 0]],
+        filter: ['all', ['get', 'watchlist'], ['>', ['get', 'risk'], 0], zoomTier],
         paint: {
           'circle-radius': ['+', 8, ['/', cappedRisk, 9]],
           'circle-color': categoryColor,
@@ -493,7 +501,7 @@ export default function LiveMap() {
         id: 'vessels-dots',
         type: 'circle',
         source: 'vessels',
-        filter: ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 0]],
+        filter: ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 0], zoomTier],
         paint: {
           'circle-radius': ['+', 5.5, ['/', cappedRisk, 28]],
           'circle-color': categoryColor,
@@ -508,7 +516,7 @@ export default function LiveMap() {
         id: 'vessels-arrows',
         type: 'symbol',
         source: 'vessels',
-        filter: ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 1]],
+        filter: ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 1], zoomTier],
         layout: {
           'icon-image': [
             'match', ['get', 'kind'],
@@ -986,6 +994,7 @@ export default function LiveMap() {
         <div className="legend-head">Markers</div>
         <div><span className="swatch" style={{ background: COLORS.region }} />Ordinary traffic</div>
         <div className="legend-note">▲ underway (points where it is heading) · ● stopped · size = risk</div>
+        <div className="legend-note">behaviour flags below risk 100 appear when zoomed in</div>
       </div>
     </>
   )
