@@ -1078,7 +1078,20 @@ HARD_RULES = {"identity_change", "mmsi_collision", "circle_spoofing",
               "impossible_jump", "identity_integrity", "draught_change"}
 
 
-def _qualifies_for_watchlist(rules: set[str], score: float, min_score: float,
+def _placeholder_identity(mmsi: int) -> bool:
+    """Shared/test MMSIs: factory defaults, invalid prefixes, group/coast
+    allocations (trailing zeros) and filler numbers (200000000, 499999999).
+    Hundreds of unrelated transmitters broadcast these, so identity rules fire
+    on them constantly - one 'ship' that is really many boats. They stay in
+    the Suggestions queue instead of auto-promoting to the public map."""
+    s = str(mmsi)
+    return (_mmsi_integrity_issue(mmsi) is not None
+            or s.endswith("00000")
+            or len(set(s[1:])) == 1)
+
+
+def _qualifies_for_watchlist(mmsi: int, rules: set[str], score: float,
+                             min_score: float,
                              sanctions_only: bool = False) -> bool:
     if score < min_score:
         return False
@@ -1090,9 +1103,14 @@ def _qualifies_for_watchlist(rules: set[str], score: float, min_score: float,
         # only verified facts auto-promote; behaviour flags stay suggestions
         # for a human to judge
         return has_sanction_list
-    # a hard-to-fake behavioural signal
-    has_hard_signal = bool(rules & HARD_RULES)
-    return has_sanction_list or has_hard_signal
+    if has_sanction_list:
+        return True
+    # behaviour-only ships: a hard-to-fake signal qualifies, but never for a
+    # shared/placeholder identity - its "identity changes" are many different
+    # boats, not one ship lying
+    if _placeholder_identity(mmsi):
+        return False
+    return bool(rules & HARD_RULES)
 
 
 async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
@@ -1125,7 +1143,8 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
             v.risk_score = scores[v.mmsi]
         if v.active and v.auto_added and not v.pinned:
             sc = scores.get(v.mmsi, 0)
-            if not _qualifies_for_watchlist(rules_by.get(v.mmsi, set()), sc, s.suggestion_min_score,
+            if not _qualifies_for_watchlist(v.mmsi, rules_by.get(v.mmsi, set()), sc,
+                                            s.suggestion_min_score,
                                             s.auto_watchlist_sanctions_only):
                 v.active = False
                 v.followed = False
@@ -1141,7 +1160,8 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
 
     candidates = sorted(
         ((m, sc) for m, sc in scores.items()
-         if _qualifies_for_watchlist(rules_by.get(m, set()), sc, s.suggestion_min_score,
+         if _qualifies_for_watchlist(m, rules_by.get(m, set()), sc,
+                                     s.suggestion_min_score,
                                      s.auto_watchlist_sanctions_only)
          and not (by_mmsi.get(m) and by_mmsi[m].active)),
         key=lambda x: -x[1],
