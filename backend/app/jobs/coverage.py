@@ -102,7 +102,12 @@ async def sweep_outage_gap_events() -> None:
             return  # not enough history to define "normal"
         med = median(counts.values())
         floor = SWEEP_FLOOR_RATIO * med
-        start, end = min(counts), max(counts)
+        # start at the window edge, not the first stored hour: hours with NO
+        # positions at all (data purged, ingest down for days) are the deafest
+        # of all and must count, or silence spanning them looks like evidence
+        start = (now - timedelta(days=SWEEP_LOOKBACK_DAYS)).replace(
+            minute=0, second=0, microsecond=0)
+        end = max(counts)
         deaf = set()
         h = start
         while h <= end:
