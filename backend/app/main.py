@@ -196,6 +196,13 @@ async def _initial_behavior_run() -> None:
     # scan BEFORE the external syncs: a slow/hung Copernicus or GFW call must
     # not starve the sanctions matcher (it once sat behind a hung GFW sync
     # for the pod's whole life)
+    # BEFORE the behaviour scan: it only needs the DB and it deletes the
+    # false gap events the scan would otherwise score - running it behind
+    # the slow satellite syncs delayed honest scores by an hour
+    try:
+        await sweep_outage_gap_events()
+    except Exception:
+        logger.exception("Initial coverage sweep failed")
     try:
         await run_behavior_scan()
     except Exception:
@@ -216,12 +223,6 @@ async def _initial_behavior_run() -> None:
         await run_sar_detection()
     except Exception:
         logger.exception("Initial SAR detection run failed")
-    # after everything else: clean gap events minted during receiver outages
-    # (a fresh deploy after a DB-full incident heals itself on first boot)
-    try:
-        await sweep_outage_gap_events()
-    except Exception:
-        logger.exception("Initial coverage sweep failed")
 
 
 app = FastAPI(title="Dark Ships - phase 1 MVP", lifespan=lifespan)
