@@ -1092,6 +1092,18 @@ MOU_DETENTION_RULES = {"risklist_parismou", "risklist_tokyomou",
 HARD_RULES = {"identity_change", "mmsi_collision", "circle_spoofing",
               "identity_integrity", "draught_change"}
 
+# The convergence path: no single one of these is proof (each has innocent
+# explanations), but a ship telling THREE different suspicious stories at
+# once - e.g. loitered in a corridor + met a ship at sea + went dark - is a
+# suspect no matter how it holds its papers. List memberships/detentions are
+# excluded: they already have their own path.
+CONVERGENCE_RULES = {"impossible_jump", "regional_gap", "drift_mismatch",
+                     "loitering", "rendezvous", "dark_association",
+                     "midsea_appearance", "nav_status_lie", "gfw_encounter",
+                     "gfw_ais_gap", "gfw_loitering", "oil_slick"}
+CONVERGENCE_MIN_RULES = 3     # distinct stories required...
+CONVERGENCE_MIN_SCORE = 150.0  # ...and a score well above the base threshold
+
 
 def _placeholder_identity(mmsi: int) -> bool:
     """Shared/test MMSIs: factory defaults, invalid prefixes, group/coast
@@ -1125,7 +1137,12 @@ def _qualifies_for_watchlist(mmsi: int, rules: set[str], score: float,
     # boats, not one ship lying
     if _placeholder_identity(mmsi):
         return False
-    return bool(rules & HARD_RULES)
+    if rules & HARD_RULES:
+        return True
+    # convergence: three DIFFERENT suspicious behaviours + a high score add up
+    # to a risk even when each alone would be dismissible
+    return (len(rules & CONVERGENCE_RULES) >= CONVERGENCE_MIN_RULES
+            and score >= CONVERGENCE_MIN_SCORE)
 
 
 async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
