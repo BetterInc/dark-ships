@@ -216,11 +216,6 @@ export default function ShipDetails() {
         </p>
       )}
 
-      <p style={{ marginTop: '1.6rem' }}>
-        <Link to={`/ship/${info.mmsi}`} style={{ color: 'var(--watch-other)', fontWeight: 600 }}>
-          ◉ View {info.name ?? 'ship'} on the map →
-        </Link>
-      </p>
     </div>
   )
 }
