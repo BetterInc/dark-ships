@@ -105,6 +105,9 @@ export default function ShipDetails() {
   if (!info) return <div className="page"><p className="empty">Loading ship…</p></div>
 
   const lp = info.last_pos
+  // queued (not-yet-analyzed) checks are pipeline internals - readers only
+  // see finished verdicts; the queue drains automatically every few hours
+  const analyzed = checks.filter((c) => c.hull_detected != null)
   return (
     <div className="page dossier">
       <header className="dossier-head">
@@ -168,7 +171,7 @@ export default function ShipDetails() {
         </section>
       )}
 
-      {checks.length > 0 && (
+      {analyzed.length > 0 && (
         <section className="card card-row">
           <h2>Satellite verification</h2>
           <div className="table-scroll">
@@ -177,7 +180,7 @@ export default function ShipDetails() {
                 <tr><th>Chip</th><th>Source</th><th>Captured</th><th>Δ claim</th><th>Radar verdict</th><th>Verify</th></tr>
               </thead>
               <tbody>
-                {checks.map((c) => (
+                {analyzed.map((c) => (
                   <tr key={c.id}>
                     <td>
                       {c.chip_key ? (
@@ -259,7 +262,7 @@ export default function ShipDetails() {
         </section>
       )}
 
-      {info.on_watchlist && checks.length === 0 && (
+      {info.on_watchlist && analyzed.length === 0 && (
         <p className="empty" style={{ marginTop: '1.4rem' }}>
           No satellite captures matched yet - they appear automatically as
           Sentinel passes cover the ship&apos;s reported positions.
