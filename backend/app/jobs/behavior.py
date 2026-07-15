@@ -18,7 +18,7 @@ are pinned and never touched; lowest-scoring auto entries get evicted first).
 
 import json
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
@@ -700,7 +700,8 @@ async def rule_mmsi_collision(session, now: datetime) -> list[RiskEvent]:
     positives - two ships genuinely cannot be one."""
     since = now - timedelta(minutes=COLLISION_WINDOW_MIN)
     rows = (await session.execute(
-        select(Position.mmsi, Position.ts, Position.lat, Position.lon)
+        select(Position.mmsi, Position.ts, Position.lat, Position.lon,
+               Position.ship_name)
         .where(Position.ts >= since)
         .order_by(Position.mmsi, Position.ts)
     )).all()
@@ -727,9 +728,16 @@ async def rule_mmsi_collision(session, now: datetime) -> list[RiskEvent]:
         if await _has_event(session, mmsi, "mmsi_collision", since):
             continue
         b = far[0]
+        # WHICH identity was broadcast at each place: the clone often carries a
+        # different (or no) name than the real hull - that contrast is the story
+        def _cluster_name(pts_):
+            names = Counter(p.ship_name for p in pts_ if p.ship_name)
+            return names.most_common(1)[0][0] if names else "(no name broadcast)"
         events.append(_event(mmsi, "mmsi_collision",
                              cluster_a=[round(a.lat, 3), round(a.lon, 3)],
+                             name_at_a=_cluster_name(near),
                              cluster_b=[round(b.lat, 3), round(b.lon, 3)],
+                             name_at_b=_cluster_name(far),
                              km_apart=round(haversine_km(a.lat, a.lon, b.lat, b.lon), 1)))
         logger.warning("MMSI collision: %s transmitting from two places %.0f km apart",
                        mmsi, haversine_km(a.lat, a.lon, b.lat, b.lon))

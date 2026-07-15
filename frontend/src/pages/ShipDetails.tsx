@@ -200,7 +200,13 @@ export default function ShipDetails() {
               </thead>
               <tbody>
                 {events.map((e, i) => {
+                  const fmtVal = (v: unknown): string => {
+                    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(4)
+                    if (Array.isArray(v)) return v.map(fmtVal).join(', ')
+                    return String(v)
+                  }
                   const entries = Object.entries((e.detail ?? {}) as Record<string, unknown>)
+                    .filter(([, v]) => v != null && v !== '')
                   return [
                     <tr key={`${e.rule}-${e.ts}-${i}`} className={`evt-row ${e.severity}`}
                         style={{ cursor: entries.length ? 'pointer' : 'default' }}
@@ -219,7 +225,7 @@ export default function ShipDetails() {
                           <dl className="datagrid" style={{ margin: 0 }}>
                             {entries.map(([k, v]) => (
                               <Row key={k} label={k.replace(/_$/, '').replace(/_/g, ' ')}>
-                                <span className="mono">{Array.isArray(v) ? v.join(', ') : String(v)}</span>
+                                <span className="mono">{fmtVal(v)}</span>
                               </Row>
                             ))}
                           </dl>
