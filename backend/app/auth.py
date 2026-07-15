@@ -125,6 +125,8 @@ fastapi_users = FastAPIUsers[User, int](get_user_manager, [auth_backend])
 
 # the reusable dependency the watchlist agent (and other routers) will import
 current_active_user = fastapi_users.current_user(active=True)
+# for endpoints that are public but richer when logged in (guest teasers)
+current_user_optional = fastapi_users.current_user(active=True, optional=True)
 # admin-only routes: 401 when unauthenticated, 403 when not a superuser
 current_superuser = fastapi_users.current_user(active=True, superuser=True)
 

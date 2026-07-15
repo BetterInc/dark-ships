@@ -80,7 +80,9 @@ function Verdict({ item }: { item: ImageryItem }) {
 
 export default function Imagery() {
   const [page, setPage] = useState(0)
-  const [kind, setKind] = useState('all')
+  // default to the auto-verified radar checks; the thousands of raw AIS-gap
+  // scenes stay one filter click away instead of burying the evidence
+  const [kind, setKind] = useState('position_check')
   const [source, setSource] = useState('all')
   const [verdict, setVerdict] = useState('all')
 

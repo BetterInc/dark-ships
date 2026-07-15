@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import current_superuser
+from pydantic import BaseModel
+
+from ..auth import current_superuser, current_user_optional
 from ..config import get_settings
 from ..db import get_session
 from ..models import LatestPosition, Position, PositionCheck, RiskEvent, Vessel, VesselRegistry
@@ -163,17 +165,27 @@ async def delete_vessel(mmsi: int, session: AsyncSession = Depends(get_session))
     await session.commit()
 
 
-@router.get("/{mmsi}/position-checks", response_model=list[PositionCheckOut])
-async def position_checks(mmsi: int, session: AsyncSession = Depends(get_session)):
+class PositionChecksOut(BaseModel):
+    locked: int  # checks hidden from guests (0 when logged in)
+    items: list[PositionCheckOut]
+
+
+@router.get("/{mmsi}/position-checks", response_model=PositionChecksOut)
+async def position_checks(mmsi: int, session: AsyncSession = Depends(get_session),
+                          user=Depends(current_user_optional)):
     """Satellite scenes that captured this vessel's claimed AIS positions -
-    if the ship says it's there, the image should show a hull there."""
-    result = await session.execute(
+    if the ship says it's there, the image should show a hull there.
+    Guests get a one-check teaser; the full history requires an account
+    (enforced here, not in the UI - the API is public)."""
+    checks = (await session.execute(
         select(PositionCheck)
         .where(PositionCheck.mmsi == mmsi)
         .order_by(PositionCheck.acquired_at.desc())
         .limit(20)
-    )
-    return result.scalars().all()
+    )).scalars().all()
+    if user is None and len(checks) > 1:
+        return PositionChecksOut(locked=len(checks) - 1, items=checks[:1])
+    return PositionChecksOut(locked=0, items=checks)
 
 
 @router.get("/{mmsi}/events")

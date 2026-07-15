@@ -17,7 +17,7 @@ from sqlalchemy import delete
 
 from ..config import get_settings
 from ..db import SessionLocal
-from ..models import DraughtChange, OilSlick
+from ..models import AisGap, DraughtChange, OilSlick, SarMatch
 from ..services import cold
 from .partitions import drop_partition, ensure_partitions, list_month_partitions
 
@@ -57,8 +57,17 @@ async def prune_positions() -> None:
             delete(OilSlick).where(OilSlick.ts < now - timedelta(days=180)))
         r4 = await session.execute(
             delete(DraughtChange).where(DraughtChange.ts < now - timedelta(days=120)))
+        # gap scenes are a search aid while a gap is open/fresh; once the gap
+        # has been closed for a month they're just imagery-page noise
+        r5 = await session.execute(
+            delete(SarMatch).where(SarMatch.gap_id.in_(
+                select(AisGap.id).where(
+                    AisGap.status == "closed",
+                    AisGap.gap_end < now - timedelta(days=30)).scalar_subquery()))
+        )
         await session.commit()
 
     logger.info("Retention: %d partitions dropped (%d rows archived), %d kept; "
-                "%d slicks, %d draught changes pruned",
-                dropped, archived, kept, r3.rowcount or 0, r4.rowcount or 0)
+                "%d slicks, %d draught changes, %d stale gap scenes pruned",
+                dropped, archived, kept, r3.rowcount or 0, r4.rowcount or 0,
+                r5.rowcount or 0)

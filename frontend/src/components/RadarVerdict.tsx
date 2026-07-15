@@ -14,7 +14,12 @@ export default function RadarVerdict({
   sizeMatch: boolean | null
 }) {
   if (hull == null) {
-    return <span className="mono" style={{ color: 'var(--muted)' }}>pending</span>
+    return (
+      <span className="mono" style={{ color: 'var(--muted)' }}
+            title="scene matched; automatic radar analysis runs within a few hours">
+        queued
+      </span>
+    )
   }
   if (hull) {
     const len = targetLengthM != null ? ` · ~${Math.round(targetLengthM)} m` : ''

@@ -1,11 +1,10 @@
 import maplibregl, { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { api, apiUrl, usePolling } from '../api/client'
-import RadarVerdict from '../components/RadarVerdict'
+import { api, usePolling } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
-import type { Cluster, LatestPosition, PositionCheck, Region, TrackPoint, WorldPosition } from '../api/types'
+import type { Cluster, LatestPosition, Region, TrackPoint, WorldPosition } from '../api/types'
 
 // Compact "+ Watchlist" control for the vessel info panels. Adds a ship to the
 // logged-in user's private watchlist; logged-out users are sent to login.
@@ -109,44 +108,6 @@ function WatchNotes({ notes }: { notes: string | null | undefined }) {
         Why it&apos;s watched
       </div>
       <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text)' }}>{notes}</div>
-    </div>
-  )
-}
-
-function SatChecks({ checks }: { checks: PositionCheck[] }) {
-  if (checks.length === 0) return null
-  return (
-    <div className="panel-detail" style={{ marginTop: '0.9rem', borderTop: '1px dashed var(--line)', paddingTop: '0.6rem' }}>
-      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.4rem' }}>
-        Satellite cross-checks - claimed position captured
-      </div>
-      {checks.slice(0, 5).map((c) => (
-        <div key={c.id} style={{ fontSize: 12, marginBottom: '0.45rem' }} className="mono">
-          {c.source} · {new Date(c.acquired_at).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC
-          · Δ{c.delta_minutes.toFixed(0)} min{' '}
-          {c.browser_url && (
-            <a href={c.browser_url} target="_blank" rel="noreferrer" style={{ color: 'var(--watch-other)' }}>
-              verify hull →
-            </a>
-          )}
-          {c.hull_detected != null && (
-            <div style={{ marginTop: 2 }}>
-              <RadarVerdict hull={c.hull_detected} persistent={c.persistent_target}
-                            offsetM={c.nearest_offset_m} targetLengthM={c.target_length_m}
-                            sizeMatch={c.size_match} />
-              {c.chip_key && (
-                <>
-                  {' · '}
-                  <a href={apiUrl(`/position-checks/${c.id}/chip`)} target="_blank" rel="noreferrer"
-                     style={{ color: 'var(--watch-other)' }}>
-                    chip →
-                  </a>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
     </div>
   )
 }
@@ -320,7 +281,6 @@ export default function LiveMap() {
   const deepLinked = useRef(false)  // only auto-focus the shared link once
   // capture the incoming ship once, before the URL-sync effect can change it
   const initialShip = useRef(shipParam ?? searchParams.get('ship'))
-  const [posChecks, setPosChecks] = useState<PositionCheck[]>([])
   // mobile: the legend / anchorage panels collapse behind toggle chips
   const [showLegend, setShowLegend] = useState(false)
   const [showClusters, setShowClusters] = useState(false)
@@ -794,20 +754,6 @@ export default function LiveMap() {
     })
   }, [mapReady, clusters])
 
-  // Satellite cross-checks for the selected watchlist vessel - whichever
-  // panel it opened in (live feed or ambient/deep-link)
-  const checksMmsi = selected?.category ? selected.mmsi
-    : selectedAmbient?.on_watchlist ? selectedAmbient.mmsi : null
-  useEffect(() => {
-    setPosChecks([])
-    if (checksMmsi == null) return
-    let cancelled = false
-    api<PositionCheck[]>(`/vessels/${checksMmsi}/position-checks`)
-      .then((c) => { if (!cancelled) setPosChecks(c) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [checksMmsi])
-
   // Fetch and draw the selected vessel's track - for ANY selected ship
   // (watchlist or ambient/world), since we now store
   // history for every ship. Ambient ships just started recording, so their
@@ -857,7 +803,6 @@ export default function LiveMap() {
           </dl>
           <PatternTags patterns={selected.patterns ?? []} />
           <WatchNotes notes={selected.notes} />
-          <SatChecks checks={posChecks} />
           <Link to={`/ship/${selected.mmsi}/details`}
                 style={{ display: 'inline-block', marginTop: '0.7rem', color: 'var(--watch-other)', fontWeight: 600, fontSize: 13 }}>
             Full profile →
@@ -896,7 +841,6 @@ export default function LiveMap() {
           </dl>
           <PatternTags patterns={selectedAmbient.patterns ?? []} />
           <WatchNotes notes={selectedAmbient.notes} />
-          <SatChecks checks={posChecks} />
           {!selectedAmbient.on_watchlist && (
             <p style={{ marginTop: '0.7rem', fontSize: 12, color: 'var(--muted)' }}>
               Not flagged - no sanctions match or suspicious pattern detected. It only

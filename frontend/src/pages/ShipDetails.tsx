@@ -43,7 +43,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 function CheckVerdict({ c }: { c: PositionCheck }) {
-  if (c.hull_detected == null) return <span className="mono" style={{ color: 'var(--muted)' }}>-</span>
   return <RadarVerdict hull={c.hull_detected} persistent={c.persistent_target}
                        offsetM={c.nearest_offset_m} targetLengthM={c.target_length_m}
                        sizeMatch={c.size_match} />
@@ -55,6 +54,7 @@ export default function ShipDetails() {
   const { mmsi } = useParams()
   const [info, setInfo] = useState<VesselInfo | null>(null)
   const [checks, setChecks] = useState<PositionCheck[]>([])
+  const [checksLocked, setChecksLocked] = useState(0)
   const [events, setEvents] = useState<RiskEventFeedItem[]>([])
   const [error, setError] = useState<string | null>(null)
 
@@ -65,8 +65,9 @@ export default function ShipDetails() {
     api<VesselInfo>(`/vessels/${mmsi}/info`)
       .then((i) => { if (!cancelled) setInfo(i) })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)) })
-    api<PositionCheck[]>(`/vessels/${mmsi}/position-checks`)
-      .then((c) => { if (!cancelled) setChecks(c) }).catch(() => {})
+    api<{ locked: number; items: PositionCheck[] }>(`/vessels/${mmsi}/position-checks`)
+      .then((c) => { if (!cancelled) { setChecks(c.items); setChecksLocked(c.locked) } })
+      .catch(() => {})
     api<RiskEventFeedItem[]>(`/vessels/${mmsi}/events`)
       .then((e) => { if (!cancelled) setEvents(e) }).catch(() => {})
     return () => { cancelled = true }
@@ -83,8 +84,11 @@ export default function ShipDetails() {
         {info.category
           ? <span className={`tag ${info.category}`}>{CATEGORY_LABELS[info.category] ?? info.category}</span>
           : <span className="tag closed">{info.on_watchlist ? 'on watchlist' : 'ordinary traffic'}</span>}
-        <Link to={`/ship/${info.mmsi}`} style={{ color: 'var(--watch-other)', fontWeight: 600 }}>
-          View on map →
+        <Link to={`/ship/${info.mmsi}`} className="ghost"
+              style={{ padding: '0.35rem 0.8rem', border: '1px solid var(--watch-other)',
+                       borderRadius: 4, color: 'var(--watch-other)', fontWeight: 600,
+                       textDecoration: 'none' }}>
+          ◉ View on map
         </Link>
       </header>
 
@@ -178,6 +182,13 @@ export default function ShipDetails() {
               </tbody>
             </table>
           </div>
+          {checksLocked > 0 && (
+            <p style={{ marginTop: '0.6rem' }}>
+              <Link to="/login" style={{ color: 'var(--watch-other)', fontWeight: 600 }}>
+                Log in to see {checksLocked} more satellite capture{checksLocked > 1 ? 's' : ''} →
+              </Link>
+            </p>
+          )}
         </section>
       )}
 
@@ -212,6 +223,12 @@ export default function ShipDetails() {
           Sentinel passes cover the ship&apos;s reported positions.
         </p>
       )}
+
+      <p style={{ marginTop: '1.6rem' }}>
+        <Link to={`/ship/${info.mmsi}`} style={{ color: 'var(--watch-other)', fontWeight: 600 }}>
+          ◉ View {info.name ?? 'ship'} on the map →
+        </Link>
+      </p>
     </div>
   )
 }
