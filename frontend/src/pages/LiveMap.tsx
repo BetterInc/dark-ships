@@ -2,6 +2,8 @@ import maplibregl, { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, usePolling } from '../api/client'
+import { useLatestPositions } from '../map/useLatestPositions'
+import { MOVING_SOG, vesselsToGeoJSON } from '../map/vesselGeo'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
 import type { Cluster, LatestPosition, Region, TrackPoint, WorldPosition } from '../api/types'
@@ -144,7 +146,6 @@ const MAP_STYLE: maplibregl.StyleSpecification = {
   layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
 }
 
-const MOVING_SOG = 1.0  // above this a ship is underway -> arrow; else -> dot
 
 interface SearchHit {
   mmsi: number
@@ -211,29 +212,6 @@ function triangleIcon(color: string): ImageData {
   ctx.fill()
   ctx.stroke()
   return ctx.getImageData(0, 0, s * ICON_PX, s * ICON_PX)
-}
-
-function vesselsToGeoJSON(positions: LatestPosition[]): GeoJSON.FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: positions.map((p) => ({
-      type: 'Feature',
-      geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-      properties: {
-        mmsi: p.mmsi,
-        name: p.vessel_name ?? p.ship_name ?? String(p.mmsi),
-        kind: p.category ?? 'region',
-        watchlist: p.category != null,
-        risk: p.risk_score ?? 0,
-        shipType: p.ship_type ?? '',
-        sog: p.sog,
-        moving: (p.sog ?? 0) > MOVING_SOG ? 1 : 0,
-        // heading the ship points; fall back to course over ground
-        bearing: p.heading ?? p.cog ?? 0,
-        ts: p.ts,
-      },
-    })),
-  }
 }
 
 function regionsToGeoJSON(regions: Region[]): GeoJSON.FeatureCollection {
@@ -333,7 +311,7 @@ export default function LiveMap() {
     }
   }
 
-  const { data: positions } = usePolling<LatestPosition[]>('/positions/latest', 30_000)
+  const { positions, geojson: vesselsGeojson } = useLatestPositions(90_000)
   const { data: regions } = usePolling<Region[]>('/regions', 300_000)
   const { data: world } = usePolling<WorldPosition[]>('/positions/world', 120_000)
   const { data: clusters } = usePolling<Cluster[]>('/clusters', 60_000)
@@ -664,9 +642,10 @@ export default function LiveMap() {
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapReady || !positions) return
-    ;(map.getSource('vessels') as GeoJSONSource)?.setData(vesselsToGeoJSON(positions))
-  }, [mapReady, positions])
+    if (!map || !mapReady || !vesselsGeojson) return
+    // built in the snapshot worker - the main thread only hands it to the GPU
+    ;(map.getSource('vessels') as GeoJSONSource)?.setData(vesselsGeojson)
+  }, [mapReady, vesselsGeojson])
 
   // put the highlight ring on whichever ship is currently selected, and pulse it
   useEffect(() => {

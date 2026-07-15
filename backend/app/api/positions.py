@@ -109,13 +109,17 @@ PATTERN_LABELS = {
 router = APIRouter(prefix="/api", tags=["positions"])
 
 
-async def _rebuild_latest(since_hours: float) -> tuple[bytes, bytes]:
+async def _rebuild_latest(since_hours: float) -> tuple[bytes, bytes, bytes, bytes]:
     from ..db import SessionLocal
     async with SessionLocal() as session:
-        raw = await _build_latest(session, since_hours)
-    gz = gzip.compress(raw, compresslevel=6)  # compressed once per window
-    _latest_cache[since_hours] = (time.monotonic(), raw, gz)
-    return raw, gz
+        rows = await _latest_rows(session, since_hours)
+    raw = _serialize_latest_json(rows)
+    bin_raw = _build_latest_bin(rows)
+    # compressed once per window; the binary gzips too (text tail + columns)
+    gz = gzip.compress(raw, compresslevel=6)
+    bin_gz = gzip.compress(bin_raw, compresslevel=6)
+    _latest_cache[since_hours] = (time.monotonic(), raw, gz, bin_raw, bin_gz)
+    return raw, gz, bin_raw, bin_gz
 
 
 async def _refresh_latest_bg(since_hours: float) -> None:
@@ -152,11 +156,39 @@ async def latest_positions(request: Request, since_hours: float = Query(24, le=2
         cached = _latest_cache.get(since_hours)  # built while we waited?
         if cached:
             return _latest_response(request, cached[1], cached[2])
-        raw, gz = await _rebuild_latest(since_hours)
+        raw, gz, _, _ = await _rebuild_latest(since_hours)
         return _latest_response(request, raw, gz)
 
 
-async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
+@router.get("/positions/latest.bin")
+async def latest_positions_bin(request: Request,
+                               since_hours: float = Query(24, le=24 * 7)):
+    """The same snapshot as /positions/latest in the columnar binary format
+    (see _build_latest_bin) - ~5x smaller pre-gzip and decodable in
+    milliseconds, which keeps the map's main thread free while 65k+ ships
+    refresh. Same shared cache and stale-while-revalidate behaviour."""
+    since_hours = min(_LATEST_WINDOWS, key=lambda w: abs(w - since_hours))
+    cached = _latest_cache.get(since_hours)
+    if cached:
+        if time.monotonic() - cached[0] >= _LATEST_TTL and not _latest_lock.locked():
+            asyncio.get_running_loop().create_task(_refresh_latest_bg(since_hours))
+        return _bin_response(request, cached[3], cached[4])
+    async with _latest_lock:
+        cached = _latest_cache.get(since_hours)
+        if cached:
+            return _bin_response(request, cached[3], cached[4])
+        _, _, bin_raw, bin_gz = await _rebuild_latest(since_hours)
+        return _bin_response(request, bin_raw, bin_gz)
+
+
+def _bin_response(request: Request, raw: bytes, gz: bytes) -> Response:
+    if "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(gz, media_type="application/octet-stream",
+                        headers={**_CACHE_HEADERS, "Content-Encoding": "gzip"})
+    return Response(raw, media_type="application/octet-stream", headers=_CACHE_HEADERS)
+
+
+async def _latest_rows(session: AsyncSession, since_hours: float) -> list[dict]:
     """Build the current picture from latest_positions (one row per ship,
     maintained by the ingester) - NOT by DISTINCT-ON scanning the position
     history, which grows by millions of rows per day and took >10s."""
@@ -173,7 +205,7 @@ async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
         .outerjoin(Vessel, (Vessel.mmsi == LatestPosition.mmsi) & Vessel.active.is_(True))
         .outerjoin(VesselRegistry, VesselRegistry.mmsi == LatestPosition.mmsi)
     )
-    rows = []
+    rows: list[dict] = []
     for r in result:
         d = dict(r._mapping)
         d["ship_type"] = ship_type_label(d.pop("ship_type", None))
@@ -204,6 +236,10 @@ async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
             patterns.setdefault(mmsi, []).append(PATTERN_LABELS.get(rule, rule))
     for r in rows:
         r["patterns"] = patterns.get(r["mmsi"], [])
+    return rows
+
+
+def _serialize_latest_json(rows: list[dict]) -> bytes:
     # exclude_none: most of the 50k+ rows are ambient traffic where category /
     # vessel_name / risk_score / notes etc. are null - dropping the null keys
     # roughly halves the payload (the frontend treats undefined as null)
@@ -211,6 +247,60 @@ async def _build_latest(session: AsyncSession, since_hours: float) -> bytes:
     return _latest_adapter.dump_json(
         [LatestPositionOut(**r) for r in rows],
         exclude_none=True, exclude_defaults=True)
+
+
+def _build_latest_bin(rows: list[dict]) -> bytes:
+    """Columnar binary snapshot ("DSB1"): the JSON payload is ~188 bytes/ship
+    of repeated keys and ISO timestamps for 65k+ ships; this packs the numeric
+    core at ~23 bytes/ship (little-endian column arrays) with one small JSON
+    tail for the text (names + watchlist enrichment). The frontend worker
+    decodes it off the main thread - see frontend/src/map/latestBinary.ts,
+    which must mirror this layout exactly.
+
+      "DSB1" | u32 count
+      u32 mmsi[]  u32 unix_ts[]  i32 lat*1e5[]  i32 lon*1e5[]
+      u16 sog*10[]  u16 cog*10[]  u16 heading*10[]   (0xFFFF = null)
+      u8 flags[]  (bit0: source == "region")
+      u32 tail_len | tail JSON: {"names": {mmsi: str}, "watch": {mmsi: {...}}}
+    """
+    import json as _json
+    from array import array
+
+    n = len(rows)
+    mmsi, ts = array("I"), array("I")
+    lat, lon = array("i"), array("i")
+    sog, cog, heading = array("H"), array("H"), array("H")
+    flags = array("B")
+    names: dict[int, str] = {}
+    watch: dict[int, dict] = {}
+    for r in rows:
+        mmsi.append(r["mmsi"])
+        ts.append(int(r["ts"].timestamp()))
+        lat.append(round(r["lat"] * 1e5))
+        lon.append(round(r["lon"] * 1e5))
+        sog.append(0xFFFF if r.get("sog") is None else min(0xFFFE, round(r["sog"] * 10)))
+        cog.append(0xFFFF if r.get("cog") is None else min(0xFFFE, round(r["cog"] * 10)))
+        heading.append(0xFFFF if r.get("heading") is None
+                       else min(0xFFFE, round(r["heading"] * 10)))
+        flags.append(1 if r.get("source") == "region" else 0)
+        if r.get("ship_name"):
+            names[r["mmsi"]] = r["ship_name"]
+        if r.get("category") is not None:
+            watch[r["mmsi"]] = {k: v for k, v in {
+                "category": r.get("category"),
+                "vessel_name": r.get("vessel_name"),
+                "risk_score": r.get("risk_score"),
+                "notes": r.get("notes"),
+                "patterns": r.get("patterns") or [],
+                "ship_type": r.get("ship_type"),
+            }.items() if v is not None}
+    tail = _json.dumps({"names": names, "watch": watch},
+                       separators=(",", ":")).encode()
+    head = b"DSB1" + n.to_bytes(4, "little")
+    return b"".join((head, mmsi.tobytes(), ts.tobytes(), lat.tobytes(),
+                     lon.tobytes(), sog.tobytes(), cog.tobytes(),
+                     heading.tobytes(), flags.tobytes(),
+                     len(tail).to_bytes(4, "little"), tail))
 
 
 # In the web/worker split only the WORKER runs the ingester, so a web pod's
