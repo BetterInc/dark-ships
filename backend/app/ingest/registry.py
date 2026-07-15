@@ -233,6 +233,14 @@ class RegistryTracker:
                 upserts, self._upserts = self._upserts, {}
                 changes, self._changes = self._changes, []
                 draught_changes, self._draught_changes = self._draught_changes, []
+                # identity cache: drop ships silent for 2 days, else the map of
+                # every MMSI ever heard grows for the life of the process
+                # (~100k+ entries after weeks). Evicted ships reseed lazily
+                # from the DB on their next static message.
+                cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+                for m in [m for m, e in self._cache.items()
+                          if e.get("last_seen_write", cutoff) < cutoff]:
+                    del self._cache[m]
             if not upserts and not changes and not draught_changes:
                 continue
             try:

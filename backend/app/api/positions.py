@@ -129,12 +129,20 @@ async def _refresh_latest_bg(since_hours: float) -> None:
             pass  # keep serving the stale copy; next request retries
 
 
+# The cache is keyed by since_hours, and since_hours is a PUBLIC float param:
+# without snapping, every distinct value (?since_hours=1.01, 1.02, ...) would
+# mint a permanent ~5MB raw+gzip entry - an easy way to OOM the web pods.
+_LATEST_WINDOWS = (1.0, 3.0, 6.0, 12.0, 24.0, 48.0, 72.0, 168.0)
+
+
 @router.get("/positions/latest", response_model=list[LatestPositionOut])
 async def latest_positions(request: Request, since_hours: float = Query(24, le=24 * 7)):
     """Most recent position per vessel, incl. watchlist info. Served from a
     short-lived shared cache, stale-while-revalidate: an expired cache is
     served immediately while one background task rebuilds it - no visitor
-    ever waits on the rebuild."""
+    ever waits on the rebuild. since_hours snaps to a fixed set of windows
+    (see _LATEST_WINDOWS) so the cache stays bounded."""
+    since_hours = min(_LATEST_WINDOWS, key=lambda w: abs(w - since_hours))
     cached = _latest_cache.get(since_hours)
     if cached:
         if time.monotonic() - cached[0] >= _LATEST_TTL and not _latest_lock.locked():
