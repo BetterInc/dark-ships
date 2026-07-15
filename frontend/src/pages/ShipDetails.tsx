@@ -42,6 +42,29 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return <><dt>{label}</dt><dd>{children}</dd></>
 }
 
+// The concrete "what" of an event: name 'DRISHTI' → 'UNKNOWN', draught
+// 11.2 m → 8.5 m, met SOME SHIP at 31.5, 32.3 - instead of only the rule name.
+function eventDetail(e: RiskEventFeedItem): string {
+  const d = (e.detail ?? {}) as Record<string, unknown>
+  const bits: string[] = []
+  if (typeof d.field === 'string' && (d.old != null || d.new != null)) {
+    bits.push(`${d.field}: '${d.old ?? '?'}' → '${d.new ?? '?'}'`)
+  }
+  if (typeof d.program === 'string' && d.program) bits.push(d.program)
+  if (typeof d.old_draught === 'number' && typeof d.new_draught === 'number') {
+    bits.push(`${d.old_draught} m → ${d.new_draught} m`)
+  }
+  const other = d.other_name ?? d.other
+  if (typeof other === 'string' && other) bits.push(`with ${other}`)
+  else if (typeof other === 'number') bits.push(`with MMSI ${other}`)
+  if (typeof d.implied_kn === 'number') bits.push(`implied ${d.implied_kn} kn`)
+  if (typeof d.mismatch_nm === 'number') bits.push(`${d.mismatch_nm} nm off prediction`)
+  if (typeof d.lat === 'number' && typeof d.lon === 'number') {
+    bits.push(`at ${d.lat.toFixed(3)}, ${d.lon.toFixed(3)}`)
+  }
+  return bits.join(' · ')
+}
+
 function CheckVerdict({ c }: { c: PositionCheck }) {
   return <RadarVerdict hull={c.hull_detected} persistent={c.persistent_target}
                        offsetM={c.nearest_offset_m} targetLengthM={c.target_length_m}
@@ -192,12 +215,13 @@ export default function ShipDetails() {
           <div className="table-scroll">
             <table className="data-table">
               <thead>
-                <tr><th>Event</th><th>Severity</th><th>Score</th><th>When</th></tr>
+                <tr><th>Event</th><th>What changed</th><th>Severity</th><th>Score</th><th>When</th></tr>
               </thead>
               <tbody>
                 {events.map((e, i) => (
                   <tr key={`${e.rule}-${e.ts}-${i}`} className={`evt-row ${e.severity}`}>
                     <td><span className={`evt-dot ${e.severity}`} /> {e.label}</td>
+                    <td className="mono" style={{ fontSize: 12, color: 'var(--text)' }}>{eventDetail(e) || '-'}</td>
                     <td><span className={`tag evt-sev ${e.severity}`}>{e.severity}</span></td>
                     <td className="mono">{Math.round(e.score)}</td>
                     <td className="mono" style={{ fontSize: 12 }}>{fmtUtc(e.ts)}</td>
