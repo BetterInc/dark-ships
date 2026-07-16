@@ -102,6 +102,18 @@ function PatternTags({ patterns }: { patterns: string[] }) {
   )
 }
 
+// A clickable legend row: toggles its map layer on/off, dimming when hidden.
+function LegendToggle({ k, on, onToggle, color, label }: {
+  k: string; on: boolean; onToggle: (k: string) => void; color: string; label: string
+}) {
+  return (
+    <button type="button" className={`legend-toggle${on ? '' : ' off'}`}
+            aria-pressed={on} onClick={() => onToggle(k)}>
+      <span className="swatch" style={{ background: color }} />{label}
+    </button>
+  )
+}
+
 // Set of mmsis already on the logged-in user's watchlist, fetched once so
 // followed ships show a done state instead of an add button.
 function useFollowed(): { followed: Set<number>; addFollowed: (mmsi: number) => void } {
@@ -250,6 +262,21 @@ export default function LiveMap() {
   // mobile: the legend / anchorage panels collapse behind toggle chips
   const [showLegend, setShowLegend] = useState(false)
   const [showClusters, setShowClusters] = useState(false)
+  // Per-layer visibility, persisted. Ambient (ordinary) traffic is the ~60k-dot
+  // clutter, so it defaults OFF; every flagged threat category defaults ON -
+  // a flag already means "worth your attention", never hide it by default.
+  const [layers, setLayers] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem('darkships.layers')
+    const base = { shadow_fleet: true, smuggling: true, sabotage: true,
+                   narco: true, iuu_fishing: true, other: true, region: false }
+    return saved ? { ...base, ...JSON.parse(saved) } : base
+  })
+  const toggleLayer = (k: string) =>
+    setLayers((prev) => {
+      const next = { ...prev, [k]: !prev[k] }
+      localStorage.setItem('darkships.layers', JSON.stringify(next))
+      return next
+    })
   const { followed, addFollowed } = useFollowed()
   // default to the auto-watchlist threshold (50); remember the user's choice
   const [minRisk, setMinRisk] = useState(() => {
@@ -686,10 +713,20 @@ export default function LiveMap() {
     const map = mapRef.current
     if (!map || !mapReady) return
     const meets: maplibregl.ExpressionSpecification = ['>=', ['get', 'risk'], minRisk]
-    map.setFilter('vessels-dots', ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 0], meets])
-    map.setFilter('vessels-arrows', ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 1], meets])
-    map.setFilter('vessels-halo', ['all', ['get', 'watchlist'], ['>', ['get', 'risk'], 0], meets])
-  }, [mapReady, minRisk])
+    // only the threat categories the user has enabled in the legend
+    const onCats = (['shadow_fleet', 'smuggling', 'sabotage', 'narco', 'iuu_fishing', 'other'] as const)
+      .filter((c) => layers[c])
+    const catOn: maplibregl.ExpressionSpecification = ['in', ['get', 'kind'], ['literal', onCats]]
+    map.setFilter('vessels-dots', ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 0], meets, catOn])
+    map.setFilter('vessels-arrows', ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 1], meets, catOn])
+    map.setFilter('vessels-halo', ['all', ['get', 'watchlist'], ['>', ['get', 'risk'], 0], meets, catOn])
+    // ambient (ordinary) traffic + STS clusters toggle wholesale
+    const vis = (on: boolean) => (on ? 'visible' : 'none')
+    for (const l of ['world-dots', 'world-arrows'])
+      map.setLayoutProperty(l, 'visibility', vis(layers.region))
+    for (const l of ['clusters-glow'])
+      if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', vis(layers.other))
+  }, [mapReady, minRisk, layers])
 
   useEffect(() => {
     const map = mapRef.current
@@ -961,18 +998,18 @@ export default function LiveMap() {
 
       <div className={`legend${showLegend ? ' open' : ''}`}>
         <div className="legend-head">On a sanctions or ban list</div>
-        <div><span className="swatch" style={{ background: COLORS.shadow_fleet }} />Sanctioned oil tanker</div>
-        <div><span className="swatch" style={{ background: COLORS.smuggling }} />Sanctioned cargo / contraband</div>
-        <div><span className="swatch" style={{ background: COLORS.sabotage }} />Cable &amp; infrastructure attacks</div>
+        <LegendToggle k="shadow_fleet" on={layers.shadow_fleet} onToggle={toggleLayer} color={COLORS.shadow_fleet} label="Sanctioned oil tanker" />
+        <LegendToggle k="smuggling" on={layers.smuggling} onToggle={toggleLayer} color={COLORS.smuggling} label="Sanctioned cargo / contraband" />
+        <LegendToggle k="sabotage" on={layers.sabotage} onToggle={toggleLayer} color={COLORS.sabotage} label="Cable & infrastructure attacks" />
 
         <div className="legend-head">Flagged by behaviour</div>
-        <div><span className="swatch" style={{ background: COLORS.narco }} />Drug trafficking</div>
-        <div><span className="swatch" style={{ background: COLORS.iuu_fishing }} />Illegal fishing</div>
-        <div><span className="swatch" style={{ background: COLORS.other }} />Behaviour flag (click ship for pattern)</div>
+        <LegendToggle k="narco" on={layers.narco} onToggle={toggleLayer} color={COLORS.narco} label="Drug trafficking" />
+        <LegendToggle k="iuu_fishing" on={layers.iuu_fishing} onToggle={toggleLayer} color={COLORS.iuu_fishing} label="Illegal fishing" />
+        <LegendToggle k="other" on={layers.other} onToggle={toggleLayer} color={COLORS.other} label="Behaviour flag (click ship for pattern)" />
 
         <div className="legend-head">Markers</div>
-        <div><span className="swatch" style={{ background: COLORS.region }} />Ordinary traffic</div>
-        <div className="legend-note">▲ underway (points where it is heading) · ● stopped · size = risk</div>
+        <LegendToggle k="region" on={layers.region} onToggle={toggleLayer} color={COLORS.region} label="Ordinary traffic" />
+        <div className="legend-note">click a row to show / hide it · ▲ underway · ● stopped · size = risk</div>
         <div className="legend-note">behaviour flags below risk 100 appear when zoomed in</div>
       </div>
     </>
