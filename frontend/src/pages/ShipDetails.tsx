@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, apiUrl } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import RadarVerdict from '../components/RadarVerdict'
 import { CATEGORY_LABELS } from '../api/types'
 import type { PositionCheck, RiskEventFeedItem } from '../api/types'
@@ -57,6 +58,8 @@ export default function ShipDetails() {
   const [checksLocked, setChecksLocked] = useState(0)
   const [events, setEvents] = useState<RiskEventFeedItem[]>([])
   const [openEvt, setOpenEvt] = useState<number | null>(null)
+  const [exporting, setExporting] = useState(false)
+  const { user } = useAuth()
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -95,8 +98,26 @@ export default function ShipDetails() {
           </span>
         )}
         <span className="spacer" />
-        <Link to={`/ship/${info.mmsi}`} className="map-btn">◉ View on map</Link>
+        {user && (
+          <button className="ghost no-print" style={{ marginRight: '0.6rem' }}
+            onClick={() => {
+              // expand every evidence row, stamp the case header, then hand
+              // off to the browser's print-to-PDF
+              setExporting(true)
+              setTimeout(() => { window.print(); setExporting(false) }, 350)
+            }}>
+            ⎙ Export case file
+          </button>
+        )}
+        <Link to={`/ship/${info.mmsi}`} className="map-btn no-print">◉ View on map</Link>
       </header>
+      {exporting && (
+        <p className="case-stamp">
+          CASE FILE · {info.name ?? info.mmsi} (MMSI {info.mmsi}) · generated{' '}
+          {new Date().toISOString().replace('T', ' ').slice(0, 16)} UTC by Dark Ships ·
+          automated detections are an investigative aid, not a legal finding
+        </p>
+      )}
 
       <div className="dossier-grid">
         <section className="card">
@@ -219,7 +240,7 @@ export default function ShipDetails() {
                         {fmtUtc(e.ts)}{entries.length > 0 && <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{openEvt === i ? '▾' : '▸'}</span>}
                       </td>
                     </tr>,
-                    openEvt === i && entries.length > 0 && (
+                    (openEvt === i || exporting) && entries.length > 0 && (
                       <tr key={`detail-${i}`}>
                         <td colSpan={4} style={{ padding: '0.4rem 0.8rem 0.7rem 1.8rem', background: 'var(--panel-raised)' }}>
                           <dl className="datagrid" style={{ margin: 0 }}>

@@ -52,6 +52,11 @@ async def _send(to: str, subject: str, body: str) -> None:
         logger.exception("Failed to send mail to %s", to)
 
 
+async def send_follow_digest(to: str, subject: str, body: str) -> None:
+    """New-activity digest for ships on a user's private watchlist."""
+    await _send(to, subject, body)
+
+
 async def send_reset_password_email(to: str, token: str) -> None:
     link = f"{get_settings().frontend_base_url}/reset-password?token={token}"
     body = (

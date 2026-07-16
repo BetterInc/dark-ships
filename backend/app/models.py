@@ -37,6 +37,9 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     # which remains the flag fastapi-users' own routers gate on.
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="user",
                                       server_default="user")
+    # follow-digest cooldown: when we last emailed this user about new
+    # activity on their followed ships (NULL = never)
+    last_digest_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     oauth_accounts: Mapped[list[OAuthAccount]] = relationship(
         "OAuthAccount", lazy="joined"
     )

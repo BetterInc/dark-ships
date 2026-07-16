@@ -949,3 +949,19 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
 }
 .dossier .map-btn:hover { background: rgba(91, 200, 175, 0.08); }
 .dossier .data-table td, .dossier .data-table th { padding: 0.5rem 0.8rem; }
+
+/* ── Case-file export (print) ─────────────────────────────── */
+.case-stamp {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  border: 1px dashed var(--line); border-radius: 4px;
+  padding: 0.4rem 0.7rem; margin-bottom: 1rem;
+}
+@media print {
+  :root { --ink: #fff; --panel: #fff; --panel-raised: #f3f4f6; --line: #999;
+          --text: #111; --muted: #444; }
+  body, .app { background: #fff !important; color: #111 !important; }
+  .statusbar, .no-print { display: none !important; }
+  .page.dossier { padding: 0; max-width: none; }
+  .dossier .card { break-inside: avoid; border-color: #bbb; }
+  a { color: #111 !important; text-decoration: none; }
+}

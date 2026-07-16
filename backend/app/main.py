@@ -25,6 +25,7 @@ from .jobs.behavior import run_behavior_scan
 from .jobs.gap_detector import run_gap_detection
 from .jobs.partitions import ensure_partitions
 from .jobs.coverage import sweep_outage_gap_events
+from .jobs.notifier import run_follow_digests
 from .jobs.position_checker import run_position_checks
 from .jobs.retention import prune_positions
 from .jobs.sar_detector import run_sar_detection
@@ -56,6 +57,7 @@ async def init_db() -> None:
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS target_length_m DOUBLE PRECISION",
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS size_match BOOLEAN",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(16) NOT NULL DEFAULT 'user'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_digest_at TIMESTAMPTZ",
             # automated SAR ship detection on stored position checks
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ",
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS hull_detected BOOLEAN",
@@ -155,6 +157,8 @@ async def lifespan(app: FastAPI):
     # (first fire one interval after start) avoids doubling up.
     scheduler.add_job(run_gap_detection, "interval", minutes=5)
     scheduler.add_job(run_behavior_scan, "interval", minutes=10)
+    # follow digests ride behind the scan so fresh events reach inboxes fast
+    scheduler.add_job(run_follow_digests, "interval", minutes=15)
     scheduler.add_job(run_position_checks, "interval", hours=6)
     # offset from the checker so fresh checks from a run get analyzed ~1h later
     scheduler.add_job(run_sar_detection, "interval", hours=6, minutes=60)
