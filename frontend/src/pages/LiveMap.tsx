@@ -268,7 +268,8 @@ export default function LiveMap() {
   const [layers, setLayers] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem('darkships.layers')
     const base = { shadow_fleet: true, smuggling: true, sabotage: true,
-                   narco: true, iuu_fishing: true, other: true, region: true }
+                   narco: true, iuu_fishing: true, other: true, region: true,
+                   region_boxes: false }
     return saved ? { ...base, ...JSON.parse(saved) } : base
   })
   const toggleLayer = (k: string) =>
@@ -439,6 +440,9 @@ export default function LiveMap() {
         id: 'regions-line',
         type: 'line',
         source: 'regions',
+        // the monitored-region boxes clutter the map, so they're hidden by
+        // default and shown only via the legend toggle
+        layout: { visibility: 'none' },
         paint: { 'line-color': '#46617c', 'line-width': 1, 'line-dasharray': [3, 3] },
       })
 
@@ -730,6 +734,8 @@ export default function LiveMap() {
       map.setLayoutProperty(l, 'visibility', vis(layers.region))
     for (const l of ['clusters-glow'])
       if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', vis(layers.other))
+    if (map.getLayer('regions-line'))
+      map.setLayoutProperty('regions-line', 'visibility', vis(layers.region_boxes))
   }, [mapReady, minRisk, layers])
 
   useEffect(() => {
@@ -1050,6 +1056,7 @@ export default function LiveMap() {
 
         <div className="legend-head">Markers</div>
         <LegendToggle k="region" on={layers.region} onToggle={toggleLayer} color={COLORS.region} label="Ordinary traffic" />
+        <LegendToggle k="region_boxes" on={layers.region_boxes} onToggle={toggleLayer} color="#46617c" label="Monitored region boxes" />
         <div className="legend-note">click a row to show / hide it · ▲ underway · ● stopped · size = risk</div>
         <div className="legend-note">behaviour flags below risk 100 appear when zoomed in</div>
       </div>
