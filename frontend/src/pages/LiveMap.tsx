@@ -269,7 +269,7 @@ export default function LiveMap() {
     const saved = localStorage.getItem('darkships.layers')
     const base = { shadow_fleet: true, smuggling: true, sabotage: true,
                    narco: true, iuu_fishing: true, other: true, region: true,
-                   region_boxes: false }
+                   spots: true, region_boxes: false }
     return saved ? { ...base, ...JSON.parse(saved) } : base
   })
   const toggleLayer = (k: string) =>
@@ -484,20 +484,12 @@ export default function LiveMap() {
       const cappedRisk: maplibregl.ExpressionSpecification = ['min', ['get', 'risk'], 150]
 
       map.addSource('vessels', { type: 'geojson', data: vesselsToGeoJSON([]) })
-      // Progressive disclosure (the MarineTraffic/GFW pattern): at world zoom
-      // only sanctions ships and heavy behaviour offenders (risk >= 100) show;
-      // the full behaviour-flag layer fades in from regional zoom (>= 6).
-      const zoomTier: maplibregl.ExpressionSpecification = ['any',
-        ['!=', ['get', 'kind'], 'other'],
-        ['>=', ['get', 'risk'], 100],
-        ['>=', ['zoom'], 6],
-      ]
       // risk halo: a glow that grows with the score, so the worst ship pulls the eye first
       map.addLayer({
         id: 'vessels-halo',
         type: 'circle',
         source: 'vessels',
-        filter: ['all', ['get', 'watchlist'], ['>', ['get', 'risk'], 0], zoomTier],
+        filter: ['all', ['get', 'watchlist'], ['>', ['get', 'risk'], 0]],
         paint: {
           'circle-radius': ['+', 8, ['/', cappedRisk, 9]],
           'circle-color': categoryColor,
@@ -514,7 +506,7 @@ export default function LiveMap() {
         id: 'vessels-dots',
         type: 'circle',
         source: 'vessels',
-        filter: ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 0], zoomTier],
+        filter: ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 0]],
         paint: {
           'circle-radius': ['+', 5.5, ['/', cappedRisk, 28]],
           'circle-color': categoryColor,
@@ -529,7 +521,7 @@ export default function LiveMap() {
         id: 'vessels-arrows',
         type: 'symbol',
         source: 'vessels',
-        filter: ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 1], zoomTier],
+        filter: ['all', ['get', 'watchlist'], ['==', ['get', 'moving'], 1]],
         layout: {
           'icon-image': [
             'match', ['get', 'kind'],
@@ -733,7 +725,7 @@ export default function LiveMap() {
     for (const l of ['world-dots', 'world-arrows'])
       map.setLayoutProperty(l, 'visibility', vis(layers.region))
     for (const l of ['clusters-glow'])
-      if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', vis(layers.other))
+      if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', vis(layers.spots))
     if (map.getLayer('regions-line'))
       map.setLayoutProperty('regions-line', 'visibility', vis(layers.region_boxes))
   }, [mapReady, minRisk, layers])
@@ -1056,9 +1048,9 @@ export default function LiveMap() {
 
         <div className="legend-head">Markers</div>
         <LegendToggle k="region" on={layers.region} onToggle={toggleLayer} color={COLORS.region} label="Ordinary traffic" />
+        <LegendToggle k="spots" on={layers.spots} onToggle={toggleLayer} color="#8b5cf6" label="Interesting spots (anchorages / hotspots)" />
         <LegendToggle k="region_boxes" on={layers.region_boxes} onToggle={toggleLayer} color="#46617c" label="Monitored region boxes" />
         <div className="legend-note">click a row to show / hide it · ▲ underway · ● stopped · size = risk</div>
-        <div className="legend-note">behaviour flags below risk 100 appear when zoomed in</div>
       </div>
     </>
   )
