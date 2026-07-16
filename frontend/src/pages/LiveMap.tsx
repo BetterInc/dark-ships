@@ -1000,40 +1000,47 @@ export default function LiveMap() {
         )}
       </div>
 
-      {clusters && clusters.length > 0 && (
+      {clusters && clusters.length > 0 && (() => {
+        const openSpot = (c: Cluster) => {
+          setSelected(null); setSelectedAmbient(null); setSelectedCluster(c)
+          mapRef.current?.flyTo({ center: [c.lon, c.lat], zoom: c.kind === 'activity' ? 6 : 10 })
+        }
+        const anchorages = clusters.filter((c) => c.kind === 'anchorage')
+        const hotspots = clusters.filter((c) => c.kind === 'activity')
+        return (
         <div className={`cluster-panel${showClusters ? ' open' : ''}`}>
           <div className="legend-head" style={{ marginTop: 0 }}>Interesting spots</div>
-          {clusters.slice(0, 8).map((c, i) => (
-            <button key={i} className="cluster-row"
-              onClick={() => {
-                setSelected(null); setSelectedAmbient(null); setSelectedCluster(c)
-                mapRef.current?.flyTo({ center: [c.lon, c.lat], zoom: c.kind === 'activity' ? 6 : 10 })
-              }}>
-              {c.kind === 'activity' ? (
-                <>
-                  <b>⚡ Behaviour hotspot · {c.count} ships</b>
-                  {c.region ? ` · ${c.region}` : ` · around ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)}`}
-                  <span className="mono">
-                    {c.variety} kinds: {c.recent_alerts.slice(0, 3).map((a) => a.pattern).join(', ')} - click for details
-                  </span>
-                </>
-              ) : (
-                <>
-                  <b>⚓ {c.count} shadow-fleet ships anchored</b>
-                  {(c.nearby ?? 0) > 0 ? ` · ≈${c.count + (c.nearby ?? 0)} flagged in the area` : ''}
-                  {c.region ? ` · ${c.region}` : ` · around ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)}`}
-                  <span className="mono">
-                    {c.recent_alerts.length > 0
-                      ? `alerts: ${c.recent_alerts.slice(0, 3).map((a) => a.pattern).join(', ')}`
-                      : `${(c.members ?? []).slice(0, 4).map((m) => m.name).filter(Boolean).join(', ')}${c.count > 4 ? '...' : ''}`}
-                    {' '}- click for details
-                  </span>
-                </>
-              )}
+          {anchorages.length > 0 && (
+            <div className="legend-note" style={{ margin: '0.1rem 0 0.2rem' }}>⚓ Fleet anchorages</div>
+          )}
+          {anchorages.slice(0, 5).map((c, i) => (
+            <button key={`a${i}`} className="cluster-row" onClick={() => openSpot(c)}>
+              <b>{c.count} shadow-fleet ships anchored</b>
+              {(c.nearby ?? 0) > 0 ? ` · ≈${c.count + (c.nearby ?? 0)} flagged in the area` : ''}
+              {c.region ? ` · ${c.region}` : ` · around ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)}`}
+              <span className="mono">
+                {c.recent_alerts.length > 0
+                  ? `alerts: ${c.recent_alerts.slice(0, 3).map((a) => a.pattern).join(', ')}`
+                  : `${(c.members ?? []).slice(0, 4).map((m) => m.name).filter(Boolean).join(', ')}${c.count > 4 ? '...' : ''}`}
+                {' '}- click for details
+              </span>
+            </button>
+          ))}
+          {hotspots.length > 0 && (
+            <div className="legend-note" style={{ margin: '0.5rem 0 0.2rem' }}>⚡ Behaviour hotspots</div>
+          )}
+          {hotspots.slice(0, 5).map((c, i) => (
+            <button key={`h${i}`} className="cluster-row" onClick={() => openSpot(c)}>
+              <b>{c.count} ships · {c.variety} kinds of activity</b>
+              {c.region ? ` · ${c.region}` : ` · around ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)}`}
+              <span className="mono">
+                {c.recent_alerts.slice(0, 3).map((a) => a.pattern).join(', ')} - click for details
+              </span>
             </button>
           ))}
         </div>
-      )}
+        )
+      })()}
 
       <div className={`legend${showLegend ? ' open' : ''}`}>
         <div className="legend-head">On a sanctions or ban list</div>
