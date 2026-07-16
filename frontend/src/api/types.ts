@@ -71,7 +71,8 @@ export interface PositionCheck {
   // measured target size and whether it can be this ship (per AIS dimensions)
   target_length_m: number | null
   size_match: boolean | null
-  chip_key: string | null  // set = chip PNG at /api/position-checks/{id}/chip
+  chip_key: string | null  // set = radar chip PNG at /api/position-checks/{id}/chip
+  optical_chip_key: string | null  // set = true-colour Sentinel-2 companion (?kind=optical)
 }
 
 export interface LatestPosition {

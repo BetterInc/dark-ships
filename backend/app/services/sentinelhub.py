@@ -154,3 +154,102 @@ async def fetch_s1_chip(lat: float, lon: float, acquired_at: datetime | None = N
     # derive it so a CHIP_* tweak can't silently skew offsets)
     m_per_px = (bbox[3] - bbox[1]) * 111_320.0 / arr.shape[0]
     return arr, m_per_px
+
+
+# Sentinel-2 true colour: cloud-free daylight only, but a real colour photo of
+# the hull - a human-friendly companion to the radar chip. The Process API
+# renders the PNG for us; leastCC picks the clearest scene in the window and we
+# reject the tile if too much of it is cloud (the SAR verdict is the truth, the
+# optical is a bonus when the sky cooperated).
+S2_EVALSCRIPT = """//VERSION=3
+function setup() {
+  return {
+    input: [{ bands: ["B02", "B03", "B04", "dataMask"] }],
+    output: { bands: 4 },
+  };
+}
+function evaluatePixel(s) {
+  // ships on open water reflect almost nothing, so lift the shadows with a
+  // gamma curve (not just linear gain, which would blow out bright coast);
+  // clamp keeps land/quays from clipping to pure white
+  var gamma = function (v) { return Math.min(1.0, Math.pow(v * 3.2, 0.65)); };
+  return [gamma(s.B04), gamma(s.B03), gamma(s.B02), s.dataMask];
+}
+"""
+
+
+async def fetch_s2_truecolor(lat: float, lon: float, around: datetime,
+                             window_days: int = 10) -> bytes | None:
+    """A cloud-free true-colour PNG of the same 3x3 km chip, from the clearest
+    Sentinel-2 pass within +/- window_days of `around`. Returns PNG bytes, or
+    None when no usable (in-swath, low-cloud) daylight scene exists - which is
+    most of the time in cloudy waters, and that's fine."""
+    if not get_settings().sar_detection_enabled:
+        return None
+    t0 = (around - timedelta(days=window_days)).astimezone(timezone.utc)
+    t1 = (around + timedelta(days=window_days)).astimezone(timezone.utc)
+    bbox = chip_bbox(lat, lon)
+    body = {
+        "input": {
+            "bounds": {"bbox": bbox, "properties": {
+                "crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}},
+            "data": [{
+                "type": "sentinel-2-l2a",
+                "dataFilter": {
+                    "timeRange": {"from": t0.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                  "to": t1.strftime("%Y-%m-%dT%H:%M:%SZ")},
+                    "maxCloudCoverage": 40,
+                    "mosaickingOrder": "leastCC",
+                },
+            }],
+        },
+        "output": {
+            "width": CHIP_PX, "height": CHIP_PX,
+            "responses": [{"identifier": "default",
+                           "format": {"type": "image/png"}}],
+        },
+        "evalscript": S2_EVALSCRIPT,
+    }
+    async with httpx.AsyncClient(timeout=90) as client:
+        try:
+            token = await _token(client)
+            resp = await client.post(
+                PROCESS_URL, json=body,
+                headers={"Authorization": f"Bearer {token}", "Accept": "image/png"})
+            resp.raise_for_status()
+        except Exception:
+            logger.info("No usable Sentinel-2 optical chip (%.4f, %.4f)", lat, lon)
+            return None
+    # reject a mostly-empty tile (out of swath / all cloud): a 4-channel PNG
+    # whose alpha is largely zero carries no usable image
+    return _reject_empty_png(resp.content)
+
+
+def _reject_empty_png(png: bytes) -> bytes | None:
+    """Return the PNG only if it contains real imagery (enough non-transparent,
+    non-black pixels); else None. Stdlib zlib decode of the alpha channel."""
+    import struct
+    import zlib
+
+    try:
+        pos, w, h, idat = 8, None, None, b""
+        while pos < len(png):
+            ln = struct.unpack(">I", png[pos:pos + 4])[0]
+            tag = png[pos + 4:pos + 8]
+            if tag == b"IHDR":
+                w, h, bit, col = (*struct.unpack(">II", png[pos + 8:pos + 16]),
+                                  png[pos + 16], png[pos + 17])
+            elif tag == b"IDAT":
+                idat += png[pos + 8:pos + 8 + ln]
+            pos += 12 + ln
+        if not w or col != 6:  # need RGBA
+            return png
+        raw = zlib.decompress(idat)
+        stride = w * 4 + 1
+        opaque = 0
+        for y in range(0, h, 8):  # sample every 8th row - cheap
+            row = raw[y * stride + 1: (y + 1) * stride]
+            opaque += sum(1 for x in range(0, len(row), 4 * 8) if row[x + 3:x + 4] and row[x + 3] > 10)
+        return png if opaque > (h // 8) * (w // 8) * 0.2 else None
+    except Exception:
+        return png

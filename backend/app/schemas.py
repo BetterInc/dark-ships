@@ -124,7 +124,8 @@ class PositionCheckOut(BaseModel):
     persistent_target: bool | None = None
     target_length_m: float | None = None
     size_match: bool | None = None
-    chip_key: str | None = None  # set = chip PNG available at /api/position-checks/{id}/chip
+    chip_key: str | None = None  # set = radar chip at /api/position-checks/{id}/chip
+    optical_chip_key: str | None = None  # set = true-colour at ...?kind=optical
 
 
 class RegionOut(BaseModel):

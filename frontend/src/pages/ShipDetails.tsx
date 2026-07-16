@@ -177,12 +177,20 @@ export default function ShipDetails() {
                 {analyzed.map((c) => (
                   <tr key={c.id}>
                     <td>
-                      {c.chip_key ? (
-                        <a href={apiUrl(`/position-checks/${c.id}/chip`)} target="_blank" rel="noreferrer">
-                          <img src={apiUrl(`/position-checks/${c.id}/chip`)} alt="SAR chip"
-                               className="chip-thumb" loading="lazy" />
-                        </a>
-                      ) : <span className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>-</span>}
+                      <div style={{ display: 'flex', gap: '0.3rem' }}>
+                        {c.chip_key ? (
+                          <a href={apiUrl(`/position-checks/${c.id}/chip`)} target="_blank" rel="noreferrer" title="radar (Sentinel-1)">
+                            <img src={apiUrl(`/position-checks/${c.id}/chip`)} alt="radar chip"
+                                 className="chip-thumb" loading="lazy" />
+                          </a>
+                        ) : <span className="mono" style={{ color: 'var(--muted)', fontSize: 11 }}>-</span>}
+                        {c.optical_chip_key && (
+                          <a href={apiUrl(`/position-checks/${c.id}/chip?kind=optical`)} target="_blank" rel="noreferrer" title="true colour (Sentinel-2, cloud-free daylight)">
+                            <img src={apiUrl(`/position-checks/${c.id}/chip?kind=optical`)} alt="optical chip"
+                                 className="chip-thumb" loading="lazy" />
+                          </a>
+                        )}
+                      </div>
                     </td>
                     <td><span className={`tag ${c.source === 'sentinel-1' ? 'other' : 'shadow_fleet'}`}>{c.source}</span></td>
                     <td className="mono" style={{ fontSize: 12 }}>{fmtUtc(c.acquired_at)}</td>

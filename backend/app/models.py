@@ -285,7 +285,9 @@ class PositionCheck(Base):
     # is size-plausible for THIS ship's AIS dimensions (NULL = dims unknown)
     target_length_m: Mapped[float | None] = mapped_column(Float)
     size_match: Mapped[bool | None] = mapped_column(Boolean)
-    chip_key: Mapped[str | None] = mapped_column(String(256))   # S3 object key of the PNG
+    chip_key: Mapped[str | None] = mapped_column(String(256))   # S3 key: radar (SAR) PNG
+    # true-colour Sentinel-2 companion when a cloud-free daylight pass exists
+    optical_chip_key: Mapped[str | None] = mapped_column(String(256))
 
     __table_args__ = (
         Index("ix_position_checks_mmsi_product", "mmsi", "product_id", unique=True),

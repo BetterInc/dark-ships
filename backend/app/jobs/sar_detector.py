@@ -23,7 +23,7 @@ from ..services.sardetect import (MATCH_RADIUS_M, detect_ships,
                                   render_chip_png, size_plausible,
                                   target_is_persistent)
 from ..services.shipdetect import detect_ships_ml, model_available
-from ..services.sentinelhub import fetch_s1_chip
+from ..services.sentinelhub import fetch_s1_chip, fetch_s2_truecolor
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,13 @@ async def analyze_check(session, check: PositionCheck) -> str:
                 result, _detect(ref[0], ref[1]), m_per_px)
 
     check.chip_key = await put_chip(check.id, render_chip_png(chip))
+    # a confirmed hull earns a true-colour daylight companion IF a cloud-free
+    # Sentinel-2 pass exists nearby (best-effort; radar stays the detector)
+    if check.hull_detected and not check.optical_chip_key:
+        optical = await fetch_s2_truecolor(
+            check.claimed_lat, check.claimed_lon, check.acquired_at)
+        if optical:
+            check.optical_chip_key = await put_chip(check.id, optical, kind="optical")
     await session.commit()  # per-check: a crash mid-batch loses nothing
     return "analyzed"
 
@@ -167,6 +174,9 @@ async def cleanup_orphan_chips(session) -> None:
         return
     referenced = set((await session.execute(
         select(PositionCheck.chip_key).where(PositionCheck.chip_key.isnot(None))
+    )).scalars()) | set((await session.execute(
+        select(PositionCheck.optical_chip_key).where(
+            PositionCheck.optical_chip_key.isnot(None))
     )).scalars())
     orphans = [k for k in stored if k not in referenced]
     for key in orphans:

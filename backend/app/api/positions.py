@@ -510,17 +510,21 @@ async def clusters(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/position-checks/{check_id}/chip")
-async def position_check_chip(check_id: int, session: AsyncSession = Depends(get_session)):
-    """The stored SAR chip (grayscale sigma0 PNG) behind an automated hull
-    verdict - proxied from MinIO/Wasabi so the bucket itself stays private."""
+async def position_check_chip(check_id: int, kind: str = Query("radar", pattern="^(radar|optical)$"),
+                              session: AsyncSession = Depends(get_session)):
+    """The stored chip PNG behind a hull verdict - proxied from MinIO/Wasabi so
+    the bucket stays private. kind=radar is the grayscale Sentinel-1 sigma0
+    (the detector's evidence); kind=optical is the true-colour Sentinel-2
+    companion when a cloud-free daylight pass existed."""
     from fastapi import HTTPException
 
     from ..services.chipstore import get_chip
 
     check = await session.get(PositionCheck, check_id)
-    if not check or not check.chip_key:
+    key = check.optical_chip_key if kind == "optical" else check.chip_key if check else None
+    if not key:
         raise HTTPException(404, "no chip stored for this check")
-    png = await get_chip(check.chip_key)
+    png = await get_chip(key)
     if png is None:
         raise HTTPException(404, "chip object unavailable")
     return Response(png, media_type="image/png",

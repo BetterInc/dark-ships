@@ -30,17 +30,18 @@ def _client():
     )
 
 
-def chip_object_key(check_id: int) -> str:
-    return f"{CHIP_PREFIX}/{check_id}.png"
+def chip_object_key(check_id: int, kind: str = "radar") -> str:
+    return (f"{CHIP_PREFIX}/{check_id}.png" if kind == "radar"
+            else f"{CHIP_PREFIX}/{check_id}-opt.png")
 
 
-async def put_chip(check_id: int, png: bytes) -> str | None:
+async def put_chip(check_id: int, png: bytes, kind: str = "radar") -> str | None:
     """Store a chip PNG; returns the object key, or None when storage is
     disabled/unavailable (detection results are still kept in Postgres)."""
     s = get_settings()
     if not s.cold_storage_enabled:
         return None
-    key = chip_object_key(check_id)
+    key = chip_object_key(check_id, kind)
     try:
         await asyncio.to_thread(
             _client().put_object, Bucket=s.s3_bucket, Key=key,
