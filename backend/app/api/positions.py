@@ -493,6 +493,7 @@ async def clusters(session: AsyncSession = Depends(get_session)):
                 alert_counts[label] = alert_counts.get(label, 0) + 1
         region = region_of(clat, clon)
         clusters.append({
+            "kind": "anchorage",
             "lat": round(clat, 3), "lon": round(clon, 3), "count": len(group),
             "nearby": nearby,
             "sanctioned": sum(1 for s in group if s["mmsi"] in sanctioned),
@@ -506,7 +507,90 @@ async def clusters(session: AsyncSession = Depends(get_session)):
                  for s in group), key=lambda m: m["name"] or ""),
         })
     clusters.sort(key=lambda c: -c["count"])
-    return clusters
+
+    hotspots = await _activity_hotspots(session, now, region_of)
+    return clusters + hotspots
+
+
+def _event_coords(rule: str, detail: dict) -> tuple[float, float] | None:
+    """Best (lat, lon) for a risk event from its detail blob - rules store the
+    location under different keys."""
+    for key in ("lat", "lon"):
+        if key not in detail:
+            break
+    else:
+        if isinstance(detail["lat"], (int, float)):
+            return detail["lat"], detail["lon"]
+    for key in ("to", "actual", "cluster_a"):  # [lat, lon] pairs
+        v = detail.get(key)
+        if isinstance(v, (list, tuple)) and len(v) == 2:
+            return v[0], v[1]
+    return None
+
+
+async def _activity_hotspots(session, now, region_of) -> list[dict]:
+    """The SECOND kind of interesting place: an AREA where a lot of weird
+    behaviour happens - ships going dark, spoofing jumps, appearing mid-sea,
+    draught changes - even when they are NOT anchored together. A concentration
+    of anomalous EVENTS in one patch of sea is itself a signal that something
+    operational is going on there (a laundering corridor, a dark-transfer zone).
+    """
+    import json as _json
+    from collections import defaultdict
+
+    since = now - timedelta(hours=72)
+    # movement/behaviour anomalies only - list memberships are not a place
+    rules = [r for r in PATTERN_LABELS if not r.startswith("risklist_")]
+    rows = (await session.execute(
+        select(RiskEvent.mmsi, RiskEvent.rule, RiskEvent.details)
+        .where(RiskEvent.ts >= since, RiskEvent.rule.in_(rules))
+    )).all()
+
+    # Fixed ~0.5-degree grid, NOT transitive clustering - a hotspot is a bounded
+    # ~50 km patch, not a chain that swallows the whole North Sea. Each cell
+    # accumulates its distinct ships and per-pattern counts.
+    CELL = 0.5
+    cells: dict[tuple[int, int], dict] = defaultdict(
+        lambda: {"ships": set(), "counts": defaultdict(int), "lat": 0.0, "lon": 0.0, "n": 0})
+    for mmsi, rule, details in rows:
+        try:
+            d = _json.loads(details) if details else {}
+        except (ValueError, TypeError):
+            d = {}
+        c = _event_coords(rule, d) if isinstance(d, dict) else None
+        if not c or not (-90 <= c[0] <= 90 and -180 <= c[1] <= 180):
+            continue
+        cell = cells[(round(c[0] / CELL), round(c[1] / CELL))]
+        cell["ships"].add(mmsi)
+        cell["counts"][rule] += 1
+        cell["lat"] += c[0]; cell["lon"] += c[1]; cell["n"] += 1
+
+    hotspots: list[dict] = []
+    for cell in cells.values():
+        ships, counts, n = cell["ships"], cell["counts"], cell["n"]
+        # a real hotspot needs DIVERSITY, not one repeated signal: >=3 different
+        # ships, >=6 events, AND >=3 distinct pattern TYPES - so a coverage edge
+        # where everyone merely "went dark" doesn't qualify; a patch with dark +
+        # spoofing + mid-sea + draught changes (varied tradecraft) does.
+        if len(ships) < 3 or n < 6 or len(counts) < 3:
+            continue
+        clat, clon = cell["lat"] / n, cell["lon"] / n
+        region = region_of(clat, clon)
+        # rank by how many DIFFERENT weird things happen here, then volume
+        hotspots.append({
+            "kind": "activity",
+            "lat": round(clat, 3), "lon": round(clon, 3),
+            "count": len(ships),          # distinct ships (map bubble size)
+            "event_count": n,             # total anomalies in 72h
+            "variety": len(counts),       # distinct pattern types
+            "region": region.name if region else None,
+            "region_kind": region.kind if region else None,
+            "recent_alerts": sorted(
+                ({"pattern": PATTERN_LABELS.get(r, r), "count": c}
+                 for r, c in counts.items()), key=lambda a: -a["count"]),
+        })
+    hotspots.sort(key=lambda h: (-h["variety"], -h["event_count"]))
+    return hotspots[:12]
 
 
 @router.get("/position-checks/{check_id}/chip")

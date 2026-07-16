@@ -452,14 +452,18 @@ export default function LiveMap() {
         type: 'circle',
         source: 'clusters',
         paint: {
-          'circle-radius': ['+', 18, ['*', ['get', 'count'], 2]],
-          'circle-color': '#e4604e',
+          // activity hotspots span a wider patch and glow purple; anchorages
+          // are tighter and red - two visually distinct kinds of hotspot
+          'circle-radius': ['case', ['==', ['get', 'activity'], 1],
+                            ['+', 26, ['min', 40, ['*', ['get', 'count'], 0.4]]],
+                            ['+', 18, ['*', ['get', 'count'], 2]]],
+          'circle-color': ['case', ['==', ['get', 'activity'], 1], '#8b5cf6', '#e4604e'],
           'circle-blur': 1,
           // soft blurred glow (an overview aid). A hollow RED RING means "ship
           // went dark" - the cluster is deliberately a soft glow, never a ring,
           // so the two can't be confused. Fades out when zoomed in past the
           // individual ships.
-          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0.3, 9, 0.3, 11, 0],
+          'circle-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.28, 9, 0.28, 11, 0],
         },
       })
 
@@ -761,7 +765,7 @@ export default function LiveMap() {
       features: clusters.map((c) => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
-        properties: { count: c.count },
+        properties: { count: c.count, activity: c.kind === 'activity' ? 1 : 0 },
       })),
     })
   }, [mapReady, clusters])
@@ -870,18 +874,39 @@ export default function LiveMap() {
       {selectedCluster && (
         <aside className="vessel-panel">
           <button className="close" onClick={() => setSelectedCluster(null)} aria-label="Close">✕</button>
+          {selectedCluster.kind === 'activity' ? (
+            <>
+              <h2>Behaviour hotspot{selectedCluster.region ? ` · ${selectedCluster.region}` : ''}</h2>
+              <span className="tag open">{selectedCluster.variety} kinds of suspicious activity</span>
+              <dl className="datagrid">
+                <dt>Centre</dt><dd>{selectedCluster.lat.toFixed(3)}, {selectedCluster.lon.toFixed(3)}</dd>
+                <dt>Ships involved</dt><dd>{selectedCluster.count}</dd>
+                <dt>Anomalies (72h)</dt><dd>{selectedCluster.event_count}</dd>
+              </dl>
+              <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
+                <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text)' }}>
+                  A patch of sea where many different ships are doing many
+                  different suspicious things - going dark, spoofing jumps,
+                  appearing mid-sea, changing draught. A concentration of varied
+                  anomalies is itself a signal that something operational happens
+                  here, even when no ships are anchored together.
+                </div>
+              </div>
+            </>
+          ) : (
+          <>
           <h2>{selectedCluster.count} shadow-fleet ships anchored together</h2>
           <span className="tag open">possible ship-to-ship area</span>
           <div className="mono" style={{ color: 'var(--muted)', fontSize: 12, marginTop: '0.3rem' }}>
             {selectedCluster.sanctioned} under OFAC/EU/UK sanctions
-            {' · '}{selectedCluster.count - selectedCluster.sanctioned} on shadow-fleet lists
+            {' · '}{selectedCluster.count - (selectedCluster.sanctioned ?? 0)} on shadow-fleet lists
           </div>
           <dl className="datagrid">
             {selectedCluster.region && <><dt>Where</dt><dd>{selectedCluster.region}</dd></>}
             <dt>Centre</dt><dd>{selectedCluster.lat.toFixed(3)}, {selectedCluster.lon.toFixed(3)}</dd>
             <dt>Anchored</dt><dd>{selectedCluster.count}</dd>
-            {selectedCluster.nearby > 0 && (
-              <><dt>In the area</dt><dd>≈{selectedCluster.count + selectedCluster.nearby} flagged ships</dd></>
+            {(selectedCluster.nearby ?? 0) > 0 && (
+              <><dt>In the area</dt><dd>≈{selectedCluster.count + (selectedCluster.nearby ?? 0)} flagged ships</dd></>
             )}
           </dl>
           <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
@@ -896,6 +921,8 @@ export default function LiveMap() {
                   : 'Open water outside our monitored regions - several flagged ships holding position together is itself the ship-to-ship staging signature.'}
             </div>
           </div>
+          </>
+          )}
           {selectedCluster.recent_alerts.length > 0 && (
             <div className="panel-detail" style={{ marginTop: '0.7rem' }}>
               <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.35rem' }}>
@@ -910,6 +937,7 @@ export default function LiveMap() {
               </div>
             </div>
           )}
+          {selectedCluster.members && (
           <div style={{ marginTop: '0.7rem' }}>
             <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--muted)', marginBottom: '0.35rem' }}>
               Members
@@ -930,6 +958,7 @@ export default function LiveMap() {
               ))}
             </div>
           </div>
+          )}
         </aside>
       )}
 
@@ -968,29 +997,41 @@ export default function LiveMap() {
         {clusters && clusters.length > 0 && (
           <button className={`panel-toggle${showClusters ? ' on' : ''}`}
                   onClick={() => { setShowClusters((v) => !v); setShowLegend(false) }}>
-            Gatherings
+            Hotspots
           </button>
         )}
       </div>
 
       {clusters && clusters.length > 0 && (
         <div className={`cluster-panel${showClusters ? ' open' : ''}`}>
-          <div className="legend-head" style={{ marginTop: 0 }}>Fleet gathering spots</div>
-          {clusters.slice(0, 5).map((c, i) => (
+          <div className="legend-head" style={{ marginTop: 0 }}>Interesting spots</div>
+          {clusters.slice(0, 8).map((c, i) => (
             <button key={i} className="cluster-row"
               onClick={() => {
                 setSelected(null); setSelectedAmbient(null); setSelectedCluster(c)
-                mapRef.current?.flyTo({ center: [c.lon, c.lat], zoom: 10 })
+                mapRef.current?.flyTo({ center: [c.lon, c.lat], zoom: c.kind === 'activity' ? 6 : 10 })
               }}>
-              <b>{c.count} shadow-fleet ships anchored</b>
-              {c.nearby > 0 ? ` · ≈${c.count + c.nearby} flagged in the area` : ''}
-              {c.region ? ` · ${c.region}` : ` · around ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)}`}
-              <span className="mono">
-                {c.recent_alerts.length > 0
-                  ? `alerts: ${c.recent_alerts.slice(0, 3).map((a) => a.pattern).join(', ')}`
-                  : `${c.members.slice(0, 4).map((m) => m.name).filter(Boolean).join(', ')}${c.count > 4 ? '...' : ''}`}
-                {' '}- click for details
-              </span>
+              {c.kind === 'activity' ? (
+                <>
+                  <b>⚡ Behaviour hotspot · {c.count} ships</b>
+                  {c.region ? ` · ${c.region}` : ` · around ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)}`}
+                  <span className="mono">
+                    {c.variety} kinds: {c.recent_alerts.slice(0, 3).map((a) => a.pattern).join(', ')} - click for details
+                  </span>
+                </>
+              ) : (
+                <>
+                  <b>⚓ {c.count} shadow-fleet ships anchored</b>
+                  {(c.nearby ?? 0) > 0 ? ` · ≈${c.count + (c.nearby ?? 0)} flagged in the area` : ''}
+                  {c.region ? ` · ${c.region}` : ` · around ${c.lat.toFixed(1)}, ${c.lon.toFixed(1)}`}
+                  <span className="mono">
+                    {c.recent_alerts.length > 0
+                      ? `alerts: ${c.recent_alerts.slice(0, 3).map((a) => a.pattern).join(', ')}`
+                      : `${(c.members ?? []).slice(0, 4).map((m) => m.name).filter(Boolean).join(', ')}${c.count > 4 ? '...' : ''}`}
+                    {' '}- click for details
+                  </span>
+                </>
+              )}
             </button>
           ))}
         </div>
