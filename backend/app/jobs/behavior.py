@@ -710,13 +710,26 @@ async def rule_mmsi_collision(session, now: datetime) -> list[RiskEvent]:
     for r in rows:
         by_mmsi[r.mmsi].append(r)
 
+    # Congestion guard: two receivers in dense water pick up garbled packets
+    # from different ships and decode the same MMSI, faking a "collision" tens
+    # of km apart. Require a FAR bigger separation where the surrounding
+    # traffic is thick (many MMSIs in the same ~0.5-degree cell this window),
+    # so the Dover Strait / German Bight noise floor doesn't promote ships.
+    cell_load: dict[tuple[int, int], set[int]] = defaultdict(set)
+    for r in rows:
+        cell_load[(round(r.lat * 2), round(r.lon * 2))].add(r.mmsi)
+
     events = []
     for mmsi, pts in by_mmsi.items():
         if len(pts) < 2 * COLLISION_MIN_PER_CLUSTER:
             continue
         # anchor cluster A on the first point; cluster B = points far from A
         a = pts[0]
-        far = [p for p in pts if haversine_km(a.lat, a.lon, p.lat, p.lon) > COLLISION_MIN_KM]
+        density = max(len(cell_load[(round(p.lat * 2), round(p.lon * 2))]) for p in pts)
+        # 40 km in open water; up to ~120 km in the busiest cells
+        min_km = COLLISION_MIN_KM * (3.0 if density > 400 else
+                                     2.0 if density > 150 else 1.0)
+        far = [p for p in pts if haversine_km(a.lat, a.lon, p.lat, p.lon) > min_km]
         near = [p for p in pts if p not in far]
         if len(far) < COLLISION_MIN_PER_CLUSTER or len(near) < COLLISION_MIN_PER_CLUSTER:
             continue
@@ -1106,11 +1119,16 @@ SIGNAL_FAMILIES = {
 }
 CONVERGENCE_MIN_FAMILIES = 2   # different kinds of story required...
 CONVERGENCE_MIN_SCORE = 150.0  # ...and a score well above the base threshold
-# Vessel classes that are (a) rarely sanctions/smuggling-relevant and (b)
-# notorious Class-B AIS noise sources: ferries, tugs, dredgers, yachts.
-# These only promote on IDENTITY-family evidence - kinematic/context
-# anomalies on a scheduled ferry are jank, not tradecraft.
-NOISY_CLASSES = set(range(60, 70)) | {31, 32, 33, 36, 37, 52}
+# The shadow-fleet / IUU threat model is CARGO-CARRYING hulls: tankers (80-89),
+# dry cargo (70-79), fishing (30). A behaviour-only ship must be one of these
+# AND carry a valid IMO to reach the public map - a prod audit + external
+# validation (Lloyd's List / GUR / Windward, Jul 2026) found the residual
+# false positives were yachts, tugs and no-IMO small craft in congested
+# European water, which are AIS-collision artifacts, not tradecraft. Such
+# vessels can still appear via a real sanctions-list match (separate path).
+def _is_cargo_hull(ship_type: int | None) -> bool:
+    return ship_type is not None and (
+        ship_type == 30 or 70 <= ship_type <= 89)
 
 
 def _placeholder_identity(mmsi: int) -> bool:
@@ -1128,7 +1146,8 @@ def _placeholder_identity(mmsi: int) -> bool:
 def _qualifies_for_watchlist(mmsi: int, rules: set[str], score: float,
                              min_score: float,
                              sanctions_only: bool = False,
-                             ship_type: int | None = None) -> bool:
+                             ship_type: int | None = None,
+                             imo: str | None = None) -> bool:
     if score < min_score:
         return False
     # a genuine sanctions / IUU-list match (NOT a detention - those are the
@@ -1145,12 +1164,13 @@ def _qualifies_for_watchlist(mmsi: int, rules: set[str], score: float,
     # "identity changes" are many different boats, not one ship lying
     if _placeholder_identity(mmsi):
         return False
+    # ...and never a hull outside the threat model. A yacht or tug with no IMO
+    # firing kinematic flags in the Dover Strait is a reception artifact, not a
+    # sanctioned tanker - require a cargo-carrying hull with a valid IMO.
+    if not (_is_cargo_hull(ship_type) and imo):
+        return False
     families = {name for name, members in SIGNAL_FAMILIES.items()
                 if rules & members}
-    # ferries/tugs/yachts/dredgers: only identity manipulation is credible
-    # evidence; their kinematic/context noise floor is far too high
-    if ship_type in NOISY_CLASSES:
-        return "identity" in families
     # a ship lying about WHO it is or moving cargo at sea stands alone;
     # anything else needs two different kinds of story plus a high score
     if "identity" in families or "cargo" in families:
@@ -1176,18 +1196,20 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
     relevant |= {m for m, sc in scores.items() if sc >= s.suggestion_min_score}
     rules_by: dict[int, set[str]] = {}
     types_by: dict[int, int | None] = {}
+    imo_by: dict[int, str | None] = {}
     if relevant:
         for m, r in await session.execute(
             select(RiskEvent.mmsi, RiskEvent.rule).where(RiskEvent.mmsi.in_(relevant)).distinct()
         ):
             rules_by.setdefault(m, set()).add(r)
-        # AIS ship type feeds the class-conditional bar (ferries/tugs/yachts
-        # only promote on identity evidence)
-        for m, st in await session.execute(
-            select(VesselRegistry.mmsi, VesselRegistry.ship_type)
+        # hull type + IMO feed the threat-model gate (behaviour-only ships must
+        # be a cargo-carrying hull with a valid IMO to promote)
+        for m, st, imo in await session.execute(
+            select(VesselRegistry.mmsi, VesselRegistry.ship_type, VesselRegistry.imo)
             .where(VesselRegistry.mmsi.in_(relevant))
         ):
             types_by[m] = st
+            imo_by[m] = imo
 
     # keep scores current, and demote auto-added ships that no longer clear the
     # bar (score fell, or a behaviour-only ship lost a corroborating signal) -
@@ -1200,7 +1222,8 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
             if not _qualifies_for_watchlist(v.mmsi, rules_by.get(v.mmsi, set()), sc,
                                             s.suggestion_min_score,
                                             s.auto_watchlist_sanctions_only,
-                                            ship_type=types_by.get(v.mmsi)):
+                                            ship_type=types_by.get(v.mmsi),
+                                            imo=imo_by.get(v.mmsi)):
                 v.active = False
                 v.followed = False
                 logger.info("Auto-watchlist: demoted MMSI %s (score %.0f, rules %s)",
@@ -1218,7 +1241,7 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
          if _qualifies_for_watchlist(m, rules_by.get(m, set()), sc,
                                      s.suggestion_min_score,
                                      s.auto_watchlist_sanctions_only,
-                                     ship_type=types_by.get(m))
+                                     ship_type=types_by.get(m), imo=imo_by.get(m))
          and not (by_mmsi.get(m) and by_mmsi[m].active)),
         key=lambda x: -x[1],
     )
