@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, usePolling } from '../api/client'
 import { useLatestPositions } from '../map/useLatestPositions'
-import { MOVING_SOG, vesselsToGeoJSON } from '../map/vesselGeo'
+import { vesselsToGeoJSON } from '../map/vesselGeo'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
-import type { Cluster, LatestPosition, TrackPoint, WorldPosition } from '../api/types'
+import type { Cluster, LatestPosition, TrackPoint } from '../api/types'
 
 // Compact "+ Watchlist" control for the vessel info panels. Adds a ship to the
 // logged-in user's private watchlist; logged-out users are sent to login.
@@ -322,7 +322,6 @@ export default function LiveMap() {
   }
 
   const { positions, geojson: vesselsGeojson } = useLatestPositions(90_000)
-  const { data: world } = usePolling<WorldPosition[]>('/positions/world', 120_000)
   const { data: clusters } = usePolling<Cluster[]>('/clusters', 60_000)
 
   // Shareable deep link: on first load, focus the ship named in /ship/<mmsi>.
@@ -389,22 +388,27 @@ export default function LiveMap() {
         if (!map.hasImage(id)) map.addImage(id, triangleIcon(color), { pixelRatio: ICON_PX })
       }
 
+      // ONE source feeds both the watchlist and the ambient layers - the
+      // snapshot (positions/latest.bin) already contains every ship, so we
+      // never fetch the ambient fleet a second time.
+      map.addSource('vessels', { type: 'geojson', data: vesselsToGeoJSON([]) })
+
       // ambient world layer: every terrestrially received ship. Same language
       // as watchlist ships - a tiny arrow if it's underway (pointing where it's
-      // going), a tiny dot if it's stopped/docked.
-      map.addSource('world', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+      // going), a tiny dot if it's stopped/docked. Filtered to the non-watchlist
+      // ships of the shared 'vessels' source.
       map.addLayer({
         id: 'world-dots',
         type: 'circle',
-        source: 'world',
-        filter: ['==', ['get', 'moving'], 0],
+        source: 'vessels',
+        filter: ['all', ['!', ['get', 'watchlist']], ['==', ['get', 'moving'], 0]],
         paint: { 'circle-radius': 3, 'circle-color': '#5b7a99', 'circle-opacity': 0.85 },
       })
       map.addLayer({
         id: 'world-arrows',
         type: 'symbol',
-        source: 'world',
-        filter: ['==', ['get', 'moving'], 1],
+        source: 'vessels',
+        filter: ['all', ['!', ['get', 'watchlist']], ['==', ['get', 'moving'], 1]],
         layout: {
           'icon-image': 'arrow-region',
           'icon-size': 0.5,
@@ -454,7 +458,6 @@ export default function LiveMap() {
       ]
       const cappedRisk: maplibregl.ExpressionSpecification = ['min', ['get', 'risk'], 150]
 
-      map.addSource('vessels', { type: 'geojson', data: vesselsToGeoJSON([]) })
       // risk halo: a glow that grows with the score, so the worst ship pulls the eye first
       map.addLayer({
         id: 'vessels-halo',
@@ -657,7 +660,7 @@ export default function LiveMap() {
       const live = positions?.find((p) => p.mmsi === selected.mmsi)
       sel = live ? [live.lon, live.lat] : [selected.lon, selected.lat]
     } else if (selectedAmbient) {
-      const live = world?.find((p) => p.mmsi === selectedAmbient.mmsi)
+      const live = positions?.find((p) => p.mmsi === selectedAmbient.mmsi)
       if (live) sel = [live.lon, live.lat]
       else if (selectedAmbient.lat != null && selectedAmbient.lon != null) {
         sel = [selectedAmbient.lon, selectedAmbient.lat]
@@ -676,7 +679,7 @@ export default function LiveMap() {
       map.setPaintProperty('selection-ring', 'circle-stroke-opacity', 0.6 + Math.sin(t) * 0.35)
     }, 60)
     return () => window.clearInterval(id)
-  }, [mapReady, selected, selectedAmbient, positions, world])
+  }, [mapReady, selected, selectedAmbient, positions])
 
   // score slider: hide watchlist ships below the chosen risk. Ambient
   // traffic (risk 0) always stays as context.
@@ -698,26 +701,6 @@ export default function LiveMap() {
     for (const l of ['clusters-glow'])
       if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', vis(layers.spots))
   }, [mapReady, minRisk, layers])
-
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapReady || !world) return
-    ;(map.getSource('world') as GeoJSONSource)?.setData({
-      type: 'FeatureCollection',
-      features: world.map((p) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-        properties: {
-          mmsi: p.mmsi,
-          moving: (p.sog ?? 0) > MOVING_SOG ? 1 : 0,
-          bearing: p.cog ?? 0,
-          sog: p.sog ?? 0,
-          name: p.ship_name ?? String(p.mmsi),
-        },
-      })),
-    })
-  }, [mapReady, world])
-
 
   useEffect(() => {
     const map = mapRef.current
