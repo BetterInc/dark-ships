@@ -1090,27 +1090,27 @@ async def _infer_category(session, mmsi: int, rules: set[str]) -> str:
 # This keeps the watchlist to vessels you can actually trust are worth watching.
 MOU_DETENTION_RULES = {"risklist_parismou", "risklist_tokyomou",
                        "risklist_blackseamou", "risklist_abujamou"}
-# Signals that qualify a behaviour-only ship for the public map. NOTE:
-# impossible_jump is deliberately NOT here - a prod audit (Jul 2026) found a
-# single lone jump had put 1,206 ships (73% of all behaviour flags) on the
-# map, which is receiver/timestamp noise at fleet scale, not 1,206 spoofers.
-# A jump still scores and corroborates; it only promotes when a SECOND
-# independent hard signal (identity manipulation, cloning, draught change)
-# says the ship is worth watching.
-HARD_RULES = {"identity_change", "mmsi_collision", "circle_spoofing",
-              "identity_integrity", "draught_change"}
-
-# The convergence path: no single one of these is proof (each has innocent
-# explanations), but a ship telling THREE different suspicious stories at
-# once - e.g. loitered in a corridor + met a ship at sea + went dark - is a
-# suspect no matter how it holds its papers. List memberships/detentions are
-# excluded: they already have their own path.
-CONVERGENCE_RULES = {"impossible_jump", "regional_gap", "drift_mismatch",
-                     "loitering", "rendezvous", "dark_association",
-                     "midsea_appearance", "nav_status_lie", "gfw_encounter",
-                     "gfw_ais_gap", "gfw_loitering", "oil_slick"}
-CONVERGENCE_MIN_RULES = 3     # distinct stories required...
+# Evidence FAMILIES (Jul 2026 audit): correlated rules must not corroborate
+# each other. A satellite-delayed AIS packet produces an impossible_jump AND
+# an mmsi_collision from the same artifact - one reception glitch, two rule
+# hits - which put island ferries at the top of the suspect list. Promotion
+# counts distinct families ("different kinds of story"), never rule volume.
+# nav_status_lie is in no family: "often a stale crew setting" - score-only.
+SIGNAL_FAMILIES = {
+    "identity": {"identity_change", "identity_integrity", "flag_hop"},
+    "kinematic": {"impossible_jump", "mmsi_collision", "circle_spoofing"},
+    "context": {"regional_gap", "drift_mismatch", "loitering", "rendezvous",
+                "dark_association", "midsea_appearance", "gfw_encounter",
+                "gfw_ais_gap", "gfw_loitering"},
+    "cargo": {"draught_change", "oil_slick"},
+}
+CONVERGENCE_MIN_FAMILIES = 2   # different kinds of story required...
 CONVERGENCE_MIN_SCORE = 150.0  # ...and a score well above the base threshold
+# Vessel classes that are (a) rarely sanctions/smuggling-relevant and (b)
+# notorious Class-B AIS noise sources: ferries, tugs, dredgers, yachts.
+# These only promote on IDENTITY-family evidence - kinematic/context
+# anomalies on a scheduled ferry are jank, not tradecraft.
+NOISY_CLASSES = set(range(60, 70)) | {31, 32, 33, 36, 37, 52}
 
 
 def _placeholder_identity(mmsi: int) -> bool:
@@ -1127,7 +1127,8 @@ def _placeholder_identity(mmsi: int) -> bool:
 
 def _qualifies_for_watchlist(mmsi: int, rules: set[str], score: float,
                              min_score: float,
-                             sanctions_only: bool = False) -> bool:
+                             sanctions_only: bool = False,
+                             ship_type: int | None = None) -> bool:
     if score < min_score:
         return False
     # a genuine sanctions / IUU-list match (NOT a detention - those are the
@@ -1140,16 +1141,21 @@ def _qualifies_for_watchlist(mmsi: int, rules: set[str], score: float,
         return has_sanction_list
     if has_sanction_list:
         return True
-    # behaviour-only ships: a hard-to-fake signal qualifies, but never for a
-    # shared/placeholder identity - its "identity changes" are many different
-    # boats, not one ship lying
+    # behaviour-only ships: never a shared/placeholder identity - its
+    # "identity changes" are many different boats, not one ship lying
     if _placeholder_identity(mmsi):
         return False
-    if rules & HARD_RULES:
+    families = {name for name, members in SIGNAL_FAMILIES.items()
+                if rules & members}
+    # ferries/tugs/yachts/dredgers: only identity manipulation is credible
+    # evidence; their kinematic/context noise floor is far too high
+    if ship_type in NOISY_CLASSES:
+        return "identity" in families
+    # a ship lying about WHO it is or moving cargo at sea stands alone;
+    # anything else needs two different kinds of story plus a high score
+    if "identity" in families or "cargo" in families:
         return True
-    # convergence: three DIFFERENT suspicious behaviours + a high score add up
-    # to a risk even when each alone would be dismissible
-    return (len(rules & CONVERGENCE_RULES) >= CONVERGENCE_MIN_RULES
+    return (len(families) >= CONVERGENCE_MIN_FAMILIES
             and score >= CONVERGENCE_MIN_SCORE)
 
 
@@ -1169,11 +1175,19 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
     relevant = {v.mmsi for v in vessels if v.active and v.auto_added and not v.pinned}
     relevant |= {m for m, sc in scores.items() if sc >= s.suggestion_min_score}
     rules_by: dict[int, set[str]] = {}
+    types_by: dict[int, int | None] = {}
     if relevant:
         for m, r in await session.execute(
             select(RiskEvent.mmsi, RiskEvent.rule).where(RiskEvent.mmsi.in_(relevant)).distinct()
         ):
             rules_by.setdefault(m, set()).add(r)
+        # AIS ship type feeds the class-conditional bar (ferries/tugs/yachts
+        # only promote on identity evidence)
+        for m, st in await session.execute(
+            select(VesselRegistry.mmsi, VesselRegistry.ship_type)
+            .where(VesselRegistry.mmsi.in_(relevant))
+        ):
+            types_by[m] = st
 
     # keep scores current, and demote auto-added ships that no longer clear the
     # bar (score fell, or a behaviour-only ship lost a corroborating signal) -
@@ -1185,7 +1199,8 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
             sc = scores.get(v.mmsi, 0)
             if not _qualifies_for_watchlist(v.mmsi, rules_by.get(v.mmsi, set()), sc,
                                             s.suggestion_min_score,
-                                            s.auto_watchlist_sanctions_only):
+                                            s.auto_watchlist_sanctions_only,
+                                            ship_type=types_by.get(v.mmsi)):
                 v.active = False
                 v.followed = False
                 logger.info("Auto-watchlist: demoted MMSI %s (score %.0f, rules %s)",
@@ -1202,7 +1217,8 @@ async def update_auto_watchlist(session, scores: dict[int, float]) -> None:
         ((m, sc) for m, sc in scores.items()
          if _qualifies_for_watchlist(m, rules_by.get(m, set()), sc,
                                      s.suggestion_min_score,
-                                     s.auto_watchlist_sanctions_only)
+                                     s.auto_watchlist_sanctions_only,
+                                     ship_type=types_by.get(m))
          and not (by_mmsi.get(m) and by_mmsi[m].active)),
         key=lambda x: -x[1],
     )
