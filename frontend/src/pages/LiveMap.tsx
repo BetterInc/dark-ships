@@ -262,13 +262,13 @@ export default function LiveMap() {
   // mobile: the legend / anchorage panels collapse behind toggle chips
   const [showLegend, setShowLegend] = useState(false)
   const [showClusters, setShowClusters] = useState(false)
-  // Per-layer visibility, persisted. Ambient (ordinary) traffic is the ~60k-dot
-  // clutter, so it defaults OFF; every flagged threat category defaults ON -
-  // a flag already means "worth your attention", never hide it by default.
+  // Per-layer visibility, persisted. Everything defaults ON - the full picture
+  // (ordinary traffic + all threat categories) is the catchy first impression;
+  // the toggles let an operator subtract what they don't need.
   const [layers, setLayers] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem('darkships.layers')
     const base = { shadow_fleet: true, smuggling: true, sabotage: true,
-                   narco: true, iuu_fishing: true, other: true, region: false }
+                   narco: true, iuu_fishing: true, other: true, region: true }
     return saved ? { ...base, ...JSON.parse(saved) } : base
   })
   const toggleLayer = (k: string) =>
