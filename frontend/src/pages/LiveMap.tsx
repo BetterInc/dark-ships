@@ -6,7 +6,7 @@ import { useLatestPositions } from '../map/useLatestPositions'
 import { MOVING_SOG, vesselsToGeoJSON } from '../map/vesselGeo'
 import { useAuth } from '../auth/AuthContext'
 import { CATEGORY_LABELS } from '../api/types'
-import type { Cluster, LatestPosition, Region, TrackPoint, WorldPosition } from '../api/types'
+import type { Cluster, LatestPosition, TrackPoint, WorldPosition } from '../api/types'
 
 // Compact "+ Watchlist" control for the vessel info panels. Adds a ship to the
 // logged-in user's private watchlist; logged-out users are sent to login.
@@ -226,24 +226,6 @@ function triangleIcon(color: string): ImageData {
   return ctx.getImageData(0, 0, s * ICON_PX, s * ICON_PX)
 }
 
-function regionsToGeoJSON(regions: Region[]): GeoJSON.FeatureCollection {
-  return {
-    type: 'FeatureCollection',
-    features: regions.map((r) => {
-      const [[latMin, lonMin], [latMax, lonMax]] = r.bbox
-      return {
-        type: 'Feature',
-        geometry: {
-          type: 'Polygon',
-          coordinates: [[
-            [lonMin, latMin], [lonMax, latMin], [lonMax, latMax], [lonMin, latMax], [lonMin, latMin],
-          ]],
-        },
-        properties: { name: r.name },
-      }
-    }),
-  }
-}
 
 export default function LiveMap() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -269,7 +251,7 @@ export default function LiveMap() {
     const saved = localStorage.getItem('darkships.layers')
     const base = { shadow_fleet: true, smuggling: true, sabotage: true,
                    narco: true, iuu_fishing: true, other: true, region: true,
-                   spots: true, region_boxes: false }
+                   spots: true }
     return saved ? { ...base, ...JSON.parse(saved) } : base
   })
   const toggleLayer = (k: string) =>
@@ -340,7 +322,6 @@ export default function LiveMap() {
   }
 
   const { positions, geojson: vesselsGeojson } = useLatestPositions(90_000)
-  const { data: regions } = usePolling<Region[]>('/regions', 300_000)
   const { data: world } = usePolling<WorldPosition[]>('/positions/world', 120_000)
   const { data: clusters } = usePolling<Cluster[]>('/clusters', 60_000)
 
@@ -435,16 +416,6 @@ export default function LiveMap() {
         paint: { 'icon-opacity': 0.9 },
       })
 
-      map.addSource('regions', { type: 'geojson', data: regionsToGeoJSON([]) })
-      map.addLayer({
-        id: 'regions-line',
-        type: 'line',
-        source: 'regions',
-        // the monitored-region boxes clutter the map, so they're hidden by
-        // default and shown only via the legend toggle
-        layout: { visibility: 'none' },
-        paint: { 'line-color': '#46617c', 'line-width': 1, 'line-dasharray': [3, 3] },
-      })
 
       // STS-staging clusters: a glowing halo under a huddle of sanctioned
       // ships. It's an OVERVIEW aid, so it fades out once you zoom in far
@@ -726,8 +697,6 @@ export default function LiveMap() {
       map.setLayoutProperty(l, 'visibility', vis(layers.region))
     for (const l of ['clusters-glow'])
       if (map.getLayer(l)) map.setLayoutProperty(l, 'visibility', vis(layers.spots))
-    if (map.getLayer('regions-line'))
-      map.setLayoutProperty('regions-line', 'visibility', vis(layers.region_boxes))
   }, [mapReady, minRisk, layers])
 
   useEffect(() => {
@@ -749,11 +718,6 @@ export default function LiveMap() {
     })
   }, [mapReady, world])
 
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !mapReady || !regions) return
-    ;(map.getSource('regions') as GeoJSONSource)?.setData(regionsToGeoJSON(regions))
-  }, [mapReady, regions])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1056,7 +1020,6 @@ export default function LiveMap() {
         <div className="legend-head">Markers</div>
         <LegendToggle k="region" on={layers.region} onToggle={toggleLayer} color={COLORS.region} label="Ordinary traffic" />
         <LegendToggle k="spots" on={layers.spots} onToggle={toggleLayer} color="#8b5cf6" label="Interesting spots (anchorages / hotspots)" />
-        <LegendToggle k="region_boxes" on={layers.region_boxes} onToggle={toggleLayer} color="#46617c" label="Monitored region boxes" />
         <div className="legend-note">click a row to show / hide it · ▲ underway · ● stopped · size = risk</div>
       </div>
     </>
