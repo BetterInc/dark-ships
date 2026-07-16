@@ -3,7 +3,6 @@ import { Link, NavLink, Route, Routes } from 'react-router-dom'
 import { usePolling } from './api/client'
 import { useAuth } from './auth/AuthContext'
 import RequireAuth from './auth/RequireAuth'
-import type { Vessel } from './api/types'
 
 // Route components are lazy-loaded so each page ships as its own chunk. This
 // keeps MapLibre (imported only by LiveMap, ~800 kB) out of the shared bundle,
@@ -33,7 +32,7 @@ export default function App() {
   const { user, logout } = useAuth()
   const [clock, setClock] = useState(utcClock())
   const [menuOpen, setMenuOpen] = useState(false)
-  const { data: vessels } = usePolling<Vessel[]>('/vessels', 60_000)
+  const { data: watchCount } = usePolling<{ active: number }>('/vessels/count', 60_000)
   // the header shows YOUR flags, not the engine's: the suggestion queue
   // lives on the Suggestions page only (401s harmlessly while logged out)
   const { data: myList } = usePolling<{ mmsi: number }[]>('/me/watchlist', 60_000)
@@ -43,7 +42,7 @@ export default function App() {
     return () => clearInterval(t)
   }, [])
 
-  const active = vessels?.filter((v) => v.active).length ?? '-'
+  const active = watchCount?.active ?? '-'
   const following = myList?.length ?? 0
 
   return (

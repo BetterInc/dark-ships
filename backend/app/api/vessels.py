@@ -105,6 +105,16 @@ async def vessel_info(mmsi: int, session: AsyncSession = Depends(get_session)):
     }
 
 
+@router.get("/count")
+async def vessel_count(session: AsyncSession = Depends(get_session)):
+    """Active-watchlist size for the header badge - the full list is ~1MB of
+    JSON that every page was polling each minute just to show this number."""
+    from sqlalchemy import func
+    n = await session.scalar(
+        select(func.count()).select_from(Vessel).where(Vessel.active.is_(True)))
+    return {"active": n or 0}
+
+
 @router.get("", response_model=list[VesselOut])
 async def list_vessels(session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(Vessel).order_by(Vessel.created_at.desc()))
