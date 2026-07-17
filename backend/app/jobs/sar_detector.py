@@ -13,11 +13,11 @@ Skips cleanly when CDSE_SH_CLIENT_ID/SECRET are not configured."""
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from ..config import get_settings
 from ..db import SessionLocal
-from ..models import PositionCheck, VesselRegistry
+from ..models import PositionCheck, RiskEvent, VesselRegistry
 from ..services.chipstore import delete_chip, list_chip_keys, put_chip
 from ..services.sardetect import (MATCH_RADIUS_M, detect_ships,
                                   detect_sts_pair, render_chip_png,
@@ -92,9 +92,22 @@ async def analyze_check(session, check: PositionCheck) -> str:
     check.nearest_offset_m = (reported.offset_m if reported
                               else result.nearest_offset_m)
     check.target_length_m = reported.length_m if reported else None
-    # ship-to-ship transfer signature: two large hulls alongside in the radar
-    # image ("tanking oil over") - free, runs on the detections we just made
-    check.sts_pair_detected = detect_sts_pair(result, m_per_px)
+    # Ship-to-ship transfer ("tanking oil over"). Imagery ALONE at 10 m/px is
+    # too noisy - a long hull split into two boxes, or oversized small-boat
+    # detections, mimic a rafted pair (validated: a Fujairah scan false-flagged
+    # scattered boats). So the image pair only counts when it CORROBORATES an
+    # AIS rendezvous / dark-association for this ship near the capture: two
+    # independent lines of evidence for the same transfer.
+    if detect_sts_pair(result, m_per_px):
+        corroborated = await session.scalar(
+            select(func.count()).select_from(RiskEvent).where(
+                RiskEvent.mmsi == check.mmsi,
+                RiskEvent.rule.in_(("rendezvous", "dark_association", "gfw_encounter")),
+                RiskEvent.ts >= check.acquired_at - timedelta(days=3),
+                RiskEvent.ts <= check.acquired_at + timedelta(days=3)))
+        check.sts_pair_detected = bool(corroborated)
+    else:
+        check.sts_pair_detected = None
 
     if check.hull_detected:
         # cross-check against a pass weeks earlier: a "hull" that was already
