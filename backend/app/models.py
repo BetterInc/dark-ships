@@ -288,6 +288,10 @@ class PositionCheck(Base):
     chip_key: Mapped[str | None] = mapped_column(String(256))   # S3 key: radar (SAR) PNG
     # true-colour Sentinel-2 companion when a cloud-free daylight pass exists
     optical_chip_key: Mapped[str | None] = mapped_column(String(256))
+    # optical-model verdict on that colour chip: True = a vessel is visible at
+    # the claim in daylight (catches hulls radar missed), False = looked, none;
+    # NULL = no cloud-free optical / model unavailable
+    optical_hull_detected: Mapped[bool | None] = mapped_column(Boolean)
 
     __table_args__ = (
         Index("ix_position_checks_mmsi_product", "mmsi", "product_id", unique=True),

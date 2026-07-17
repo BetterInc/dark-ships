@@ -66,6 +66,7 @@ async def init_db() -> None:
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS persistent_target BOOLEAN",
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS chip_key VARCHAR(256)",
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS optical_chip_key VARCHAR(256)",
+            "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS optical_hull_detected BOOLEAN",
             # backfill accounts promoted before the role column existed
             "UPDATE users SET role = 'admin' WHERE is_superuser AND role = 'user'",
             # one-time cleanup: the catalogue used to list each capture twice

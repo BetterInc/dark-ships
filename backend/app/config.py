@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     # ONNX ship-detection model for the chips (YOLOv11m/SSDD). When the file
     # is missing the detector falls back to the classical CFAR thresholder.
     sar_model_path: str = "models/sar_ship_yolov11m.onnx"
+    # ONNX OPTICAL ship detector (YOLOv8m trained on Sentinel-2 RGB,
+    # mayrajeo/marine-vessel-detection-yolov8, AGPL-3.0). Fetched from S3 at
+    # first use like the SAR model; absent = optical images stay display-only.
+    optical_model_path: str = "models/optical_ship_yolov8m.onnx"
 
     @property
     def sar_detection_enabled(self) -> bool:

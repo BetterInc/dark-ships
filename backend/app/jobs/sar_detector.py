@@ -23,6 +23,7 @@ from ..services.sardetect import (MATCH_RADIUS_M, detect_ships,
                                   render_chip_png, size_plausible,
                                   target_is_persistent)
 from ..services.shipdetect import detect_ships_ml, model_available
+from ..services.opticaldetect import detect_optical, optical_hull_at_claim
 from ..services.sentinelhub import fetch_s1_chip, fetch_s2_truecolor
 
 logger = logging.getLogger(__name__)
@@ -105,13 +106,19 @@ async def analyze_check(session, check: PositionCheck) -> str:
                 result, _detect(ref[0], ref[1]), m_per_px)
 
     check.chip_key = await put_chip(check.id, render_chip_png(chip))
-    # a confirmed hull earns a true-colour daylight companion IF a cloud-free
-    # Sentinel-2 pass exists nearby (best-effort; radar stays the detector)
-    if check.hull_detected and not check.optical_chip_key:
+
+    # Optical cross-check with a cloud-free daylight Sentinel-2 pass. Fetched
+    # for EVERY judgeable check (not just confirmed hulls): the point is to
+    # catch hulls radar MISSED - a wooden/small boat, or one lost in sea
+    # clutter - which a colour image can still show. The optical model verifies
+    # it; the colour chip is stored as evidence either way.
+    if not check.optical_chip_key:
         optical = await fetch_s2_truecolor(
             check.claimed_lat, check.claimed_lon, check.acquired_at)
         if optical:
             check.optical_chip_key = await put_chip(check.id, optical, kind="optical")
+            check.optical_hull_detected = optical_hull_at_claim(
+                detect_optical(optical, m_per_px))
     await session.commit()  # per-check: a crash mid-batch loses nothing
     return "analyzed"
 

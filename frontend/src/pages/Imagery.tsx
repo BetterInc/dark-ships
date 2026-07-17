@@ -19,6 +19,7 @@ interface ImageryItem {
   browser_url: string | null
   check_id: number | null
   optical_chip_key: string | null
+  optical_hull_detected: boolean | null
   hull_detected: boolean | null
   target_count: number | null
   nearest_offset_m: number | null
@@ -96,7 +97,7 @@ function Verdict({ item }: { item: ImageryItem }) {
   if (item.kind !== 'position_check') return <span className="mono" style={{ color: 'var(--muted)' }}>-</span>
   return <RadarVerdict hull={item.hull_detected} persistent={item.persistent_target}
                        offsetM={item.nearest_offset_m} targetLengthM={item.target_length_m}
-                       sizeMatch={item.size_match} />
+                       sizeMatch={item.size_match} opticalHull={item.optical_hull_detected} />
 }
 
 export default function Imagery() {
