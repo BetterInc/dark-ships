@@ -18,6 +18,7 @@ interface ImageryItem {
   quicklook_url: string | null
   browser_url: string | null
   check_id: number | null
+  optical_chip_key: string | null
   hull_detected: boolean | null
   target_count: number | null
   nearest_offset_m: number | null
@@ -49,11 +50,16 @@ function zoomedBrowserUrl(lat: number, lon: number, acquiredAt: string): string 
 // Chip PNG (our own measured SAR crop) when stored, else the scene quicklook.
 function Thumb({ item }: { item: ImageryItem }) {
   const [broken, setBroken] = useState(false)
+  const [hover, setHover] = useState(false)
   const chip = item.check_id != null && item.chip_key
     ? apiUrl(`/position-checks/${item.check_id}/chip`) : null
-  const src = chip ?? item.quicklook_url
+  const optical = item.check_id != null && item.optical_chip_key
+    ? apiUrl(`/position-checks/${item.check_id}/chip?kind=optical`) : null
+  const base = chip ?? item.quicklook_url
+  // on hover, swap the radar chip to the true-colour Sentinel-2 image if one exists
+  const src = hover && optical ? optical : base
   useEffect(() => { setBroken(false) }, [src])
-  if (!src || broken) {
+  if (!base || broken) {
     return (
       <div style={{
         width: 56, height: 56, borderRadius: 4, border: '1px solid var(--line)',
@@ -61,14 +67,29 @@ function Thumb({ item }: { item: ImageryItem }) {
       }} className="mono">no img</div>
     )
   }
+  const showingOptical = hover && optical
   const img = (
-    <img src={src} alt={chip ? 'SAR chip around claimed position' : (item.product_name ?? 'satellite scene')}
-      title={chip ? '3x3 km SAR chip around the claimed position - click to enlarge' : 'scene quicklook'}
+    <img src={src ?? base} alt={chip ? 'SAR chip around claimed position' : (item.product_name ?? 'satellite scene')}
+      title={optical ? 'radar chip - hover for the true-colour daylight image'
+             : chip ? '3x3 km SAR chip around the claimed position - click to enlarge' : 'scene quicklook'}
       style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 4,
-               border: chip ? '1px solid var(--watch-other)' : '1px solid var(--line)' }}
+               border: showingOptical ? '1px solid #f2b134'
+                       : chip ? '1px solid var(--watch-other)' : '1px solid var(--line)' }}
       onError={() => setBroken(true)} loading="lazy" />
   )
-  return <a href={src} target="_blank" rel="noreferrer">{img}</a>
+  return (
+    <a href={optical ?? src ?? base} target="_blank" rel="noreferrer"
+       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+       style={{ position: 'relative', display: 'inline-block' }}>
+      {img}
+      {optical && (
+        <span style={{ position: 'absolute', bottom: 1, right: 1, fontSize: 9,
+                       background: 'rgba(0,0,0,0.6)', color: '#f2b134',
+                       borderRadius: 2, padding: '0 2px', lineHeight: 1.4 }}
+              title="a true-colour daylight image is available - hover">◐</span>
+      )}
+    </a>
+  )
 }
 
 function Verdict({ item }: { item: ImageryItem }) {

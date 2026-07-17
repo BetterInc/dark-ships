@@ -32,7 +32,8 @@ class ImageryItem(BaseModel):
     persistent_target: bool | None = None
     target_length_m: float | None = None
     size_match: bool | None = None
-    chip_key: str | None = None  # set = chip at /api/position-checks/{check_id}/chip
+    chip_key: str | None = None  # set = radar chip at /api/position-checks/{check_id}/chip
+    optical_chip_key: str | None = None  # set = true-colour Sentinel-2 (?kind=optical)
 
 
 class ImageryPage(BaseModel):
@@ -84,6 +85,7 @@ async def list_imagery(
                 lat=c.claimed_lat, lon=c.claimed_lon,
                 delta_minutes=c.delta_minutes, product_name=c.product_name,
                 quicklook_url=c.quicklook_url, browser_url=c.browser_url,
+                optical_chip_key=c.optical_chip_key,
                 check_id=c.id, hull_detected=c.hull_detected,
                 target_count=c.target_count,
                 nearest_offset_m=c.nearest_offset_m,
