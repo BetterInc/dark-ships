@@ -108,11 +108,14 @@ async def vessel_info(mmsi: int, session: AsyncSession = Depends(get_session)):
 @router.get("/count")
 async def vessel_count(session: AsyncSession = Depends(get_session)):
     """Active-watchlist size for the header badge - the full list is ~1MB of
-    JSON that every page was polling each minute just to show this number."""
+    JSON that every page was polling each minute just to show this number.
+    Global + slow-changing, so let the CDN serve it (one origin hit / minute)."""
+    from fastapi import Response
     from sqlalchemy import func
     n = await session.scalar(
         select(func.count()).select_from(Vessel).where(Vessel.active.is_(True)))
-    return {"active": n or 0}
+    return Response(f'{{"active":{n or 0}}}', media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=60"})
 
 
 @router.get("", response_model=list[VesselOut])

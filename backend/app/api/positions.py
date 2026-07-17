@@ -384,8 +384,44 @@ async def regions():
     return get_settings().ais_regions
 
 
+# The clusters result is identical for every viewer and costs ~100ms of DB +
+# clustering work; the map polls it every 60s. Cache the finished bytes so N
+# viewers cause ONE rebuild per window, not N recomputes, and let a CDN serve
+# the shared copy (same pattern as /positions/latest).
+_CLUSTERS_TTL = 60.0
+_clusters_cache: tuple[float, bytes, bytes] | None = None  # (ts, raw, gz)
+_clusters_lock = asyncio.Lock()
+_CLUSTERS_HEADERS = {"Cache-Control": "public, max-age=60", "Vary": "Accept-Encoding"}
+
+
 @router.get("/clusters")
-async def clusters(session: AsyncSession = Depends(get_session)):
+async def clusters(request: Request):
+    """Interesting spots: fleet anchorages + behaviour hotspots. Served from a
+    short-lived shared cache (identical for everyone), so heavy clustering runs
+    once per minute rather than once per poll per viewer."""
+    global _clusters_cache
+    if _clusters_cache and time.monotonic() - _clusters_cache[0] < _CLUSTERS_TTL:
+        return _cached_json(request, _clusters_cache[1], _clusters_cache[2], _CLUSTERS_HEADERS)
+    async with _clusters_lock:
+        if _clusters_cache and time.monotonic() - _clusters_cache[0] < _CLUSTERS_TTL:
+            return _cached_json(request, _clusters_cache[1], _clusters_cache[2], _CLUSTERS_HEADERS)
+        from ..db import SessionLocal
+        async with SessionLocal() as session:
+            data = await _build_clusters(session)
+        raw = json.dumps(data).encode()
+        gz = gzip.compress(raw, compresslevel=6)
+        _clusters_cache = (time.monotonic(), raw, gz)
+        return _cached_json(request, raw, gz, _CLUSTERS_HEADERS)
+
+
+def _cached_json(request: Request, raw: bytes, gz: bytes, headers: dict) -> Response:
+    if "gzip" in request.headers.get("accept-encoding", ""):
+        return Response(gz, media_type="application/json",
+                        headers={**headers, "Content-Encoding": "gzip"})
+    return Response(raw, media_type="application/json", headers=headers)
+
+
+async def _build_clusters(session: AsyncSession) -> list[dict]:
     """Groups of 3+ watchlist ships sitting anchored close together - the
     ship-to-ship staging signature. A huddle of sanctioned tankers holding
     position in one spot is where oil gets transferred and re-documented."""
