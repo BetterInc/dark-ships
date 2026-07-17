@@ -127,6 +127,7 @@ class PositionCheckOut(BaseModel):
     chip_key: str | None = None  # set = radar chip at /api/position-checks/{id}/chip
     optical_chip_key: str | None = None  # set = true-colour at ...?kind=optical
     optical_hull_detected: bool | None = None  # optical model: vessel visible in daylight
+    sts_pair_detected: bool | None = None  # two tankers alongside = oil transfer
 
 
 class RegionOut(BaseModel):

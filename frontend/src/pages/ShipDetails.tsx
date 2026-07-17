@@ -46,7 +46,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 function CheckVerdict({ c }: { c: PositionCheck }) {
   return <RadarVerdict hull={c.hull_detected} persistent={c.persistent_target}
                        offsetM={c.nearest_offset_m} targetLengthM={c.target_length_m}
-                       sizeMatch={c.size_match} opticalHull={c.optical_hull_detected} />
+                       sizeMatch={c.size_match} opticalHull={c.optical_hull_detected}
+                       stsPair={c.sts_pair_detected} />
 }
 
 // Compact ship dossier: the panel's short info plus the full evidence trail

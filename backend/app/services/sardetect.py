@@ -141,6 +141,30 @@ def detect_ships(chip, m_per_px: float) -> ChipResult:
                       clutter_db=round(10.0 * math.log10(med), 1))
 
 
+STS_MIN_HULL_M = 90.0    # both hulls at least this long (tanker/large cargo)
+STS_MAX_GAP_M = 350.0    # centroids this close = lying alongside (hull-to-hull)
+STS_NEAR_CLAIM_M = 1500.0  # the pair must be near the claimed position, not chip-edge
+
+
+def detect_sts_pair(result: "ChipResult | None", m_per_px: float) -> bool | None:
+    """Ship-to-ship transfer signature IN THE IMAGE: two large hulls lying
+    alongside each other near the claim (the 'tanking oil over' pattern - two
+    tankers rafted together to move cargo at sea). Runs on whatever detector
+    produced `result` (radar tankers show as two adjacent bright targets).
+    None when unjudgeable/no detections."""
+    if result is None or not result.valid:
+        return None
+    big = [d for d in result.detections
+           if (d.length_m or 0) >= STS_MIN_HULL_M and d.offset_m <= STS_NEAR_CLAIM_M]
+    for i in range(len(big)):
+        for j in range(i + 1, len(big)):
+            gap = (((big[i].y_px - big[j].y_px) ** 2
+                    + (big[i].x_px - big[j].x_px) ** 2) ** 0.5) * m_per_px
+            if gap <= STS_MAX_GAP_M:
+                return True
+    return False
+
+
 def size_plausible(target_length_m: float | None, ship_length_m: float) -> bool:
     """Could a target of this measured size be this ship? Bounds are generous:
     SAR smearing/sidelobes inflate, azimuth ambiguity and partial returns

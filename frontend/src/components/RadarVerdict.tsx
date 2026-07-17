@@ -7,6 +7,7 @@ export default function RadarVerdict({
   targetLengthM,
   sizeMatch,
   opticalHull = null,
+  stsPair = null,
 }: {
   hull: boolean | null
   persistent: boolean | null
@@ -14,7 +15,17 @@ export default function RadarVerdict({
   targetLengthM: number | null
   sizeMatch: boolean | null
   opticalHull?: boolean | null
+  stsPair?: boolean | null
 }) {
+  // strongest signal first: two tankers rafted together = an oil transfer
+  if (stsPair) {
+    return (
+      <span style={{ color: '#f45ba8', fontWeight: 600 }}
+            title="two large hulls lying alongside in the image - a ship-to-ship oil transfer">
+        ⇄ two tankers alongside — oil transfer
+      </span>
+    )
+  }
   if (hull == null) {
     return (
       <span className="mono" style={{ color: 'var(--muted)' }}

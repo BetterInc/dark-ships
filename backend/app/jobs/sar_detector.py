@@ -20,8 +20,8 @@ from ..db import SessionLocal
 from ..models import PositionCheck, VesselRegistry
 from ..services.chipstore import delete_chip, list_chip_keys, put_chip
 from ..services.sardetect import (MATCH_RADIUS_M, detect_ships,
-                                  render_chip_png, size_plausible,
-                                  target_is_persistent)
+                                  detect_sts_pair, render_chip_png,
+                                  size_plausible, target_is_persistent)
 from ..services.shipdetect import detect_ships_ml, model_available
 from ..services.opticaldetect import detect_optical, optical_hull_at_claim
 from ..services.sentinelhub import fetch_s1_chip, fetch_s2_truecolor
@@ -92,6 +92,9 @@ async def analyze_check(session, check: PositionCheck) -> str:
     check.nearest_offset_m = (reported.offset_m if reported
                               else result.nearest_offset_m)
     check.target_length_m = reported.length_m if reported else None
+    # ship-to-ship transfer signature: two large hulls alongside in the radar
+    # image ("tanking oil over") - free, runs on the detections we just made
+    check.sts_pair_detected = detect_sts_pair(result, m_per_px)
 
     if check.hull_detected:
         # cross-check against a pass weeks earlier: a "hull" that was already

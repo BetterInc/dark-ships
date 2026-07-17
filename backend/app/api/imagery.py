@@ -35,6 +35,7 @@ class ImageryItem(BaseModel):
     chip_key: str | None = None  # set = radar chip at /api/position-checks/{check_id}/chip
     optical_chip_key: str | None = None  # set = true-colour Sentinel-2 (?kind=optical)
     optical_hull_detected: bool | None = None  # optical model: vessel visible in daylight
+    sts_pair_detected: bool | None = None  # two tankers alongside = oil transfer
 
 
 class ImageryPage(BaseModel):
@@ -88,6 +89,7 @@ async def list_imagery(
                 quicklook_url=c.quicklook_url, browser_url=c.browser_url,
                 optical_chip_key=c.optical_chip_key,
                 optical_hull_detected=c.optical_hull_detected,
+                sts_pair_detected=c.sts_pair_detected,
                 check_id=c.id, hull_detected=c.hull_detected,
                 target_count=c.target_count,
                 nearest_offset_m=c.nearest_offset_m,

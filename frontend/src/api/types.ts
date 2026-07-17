@@ -74,6 +74,7 @@ export interface PositionCheck {
   chip_key: string | null  // set = radar chip PNG at /api/position-checks/{id}/chip
   optical_chip_key: string | null  // set = true-colour Sentinel-2 companion (?kind=optical)
   optical_hull_detected: boolean | null  // optical model: vessel visible in daylight
+  sts_pair_detected: boolean | null  // two tankers alongside = oil transfer
 }
 
 export interface LatestPosition {

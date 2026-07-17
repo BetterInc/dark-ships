@@ -292,6 +292,9 @@ class PositionCheck(Base):
     # the claim in daylight (catches hulls radar missed), False = looked, none;
     # NULL = no cloud-free optical / model unavailable
     optical_hull_detected: Mapped[bool | None] = mapped_column(Boolean)
+    # two large hulls lying alongside in the image = a ship-to-ship transfer
+    # ("tanking oil over"); NULL = not judgeable
+    sts_pair_detected: Mapped[bool | None] = mapped_column(Boolean)
 
     __table_args__ = (
         Index("ix_position_checks_mmsi_product", "mmsi", "product_id", unique=True),
