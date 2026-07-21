@@ -23,7 +23,6 @@ from .db import engine
 from .ingest.aisstream import start_ingest
 from .jobs.behavior import run_behavior_scan
 from .jobs.gap_detector import run_gap_detection
-from .ingest.vesselapi import run_vesselapi_failover
 from .ingest.digitraffic import run_digitraffic
 from .ingest.aivdm_tcp import run_aivdm_feed
 from .jobs.partitions import ensure_partitions
@@ -168,9 +167,6 @@ async def lifespan(app: FastAPI):
     # _initial_* tasks below cover the immediate run; the interval default
     # (first fire one interval after start) avoids doubling up.
     scheduler.add_job(run_gap_detection, "interval", minutes=5)
-    # failover AIS: fills the monitored regions from VesselAPI, but only when
-    # the primary aisstream feed is stale (self-checks, so it's cheap normally)
-    scheduler.add_job(run_vesselapi_failover, "interval", minutes=5)
     # free national AIS: always-on Baltic / Gulf of Finland coverage
     scheduler.add_job(run_digitraffic, "interval", seconds=90)
     scheduler.add_job(run_behavior_scan, "interval", minutes=10)

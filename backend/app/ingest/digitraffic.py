@@ -5,8 +5,8 @@ Every AIS provider writes to the SAME latest_positions / positions tables; the
 rest of the system reads that one stream and never distinguishes who delivered a
 fix. `source` is just provenance metadata.
 
-Unlike the VesselAPI failover, Digitraffic is genuinely free and unlimited, so
-it runs CONTINUOUSLY - a permanent always-on contributor for the Gulf of Finland
+Digitraffic is genuinely free and unlimited, so it runs CONTINUOUSLY - a
+permanent always-on contributor for the Gulf of Finland
 / northern Baltic. That happens to be the main Russian shadow-fleet oil export
 corridor (Primorsk, Ust-Luga, St. Petersburg, Sköldvik), so this keeps the most
 important region live even while the aisstream world firehose is healthy, and

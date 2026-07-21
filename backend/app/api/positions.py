@@ -116,7 +116,7 @@ async def feed_status(session: AsyncSession = Depends(get_session)):
     the map is showing last-known positions."""
     now = datetime.now(timezone.utc)
     # One unified position stream: age of the freshest fix from ANY provider
-    # (aisstream, vesselapi, ...). We don't distinguish sources here - a live
+    # (aisstream, digitraffic, ...). We don't distinguish sources here - a live
     # feed is live no matter who delivered it.
     newest = await session.scalar(select(func.max(LatestPosition.ts)))
     age = int((now - newest).total_seconds()) if newest else None
@@ -135,7 +135,6 @@ _PROVIDERS = [
     ("aisstream", "Global (aisstream)", ("region", "world")),
     ("digitraffic", "Finland (Digitraffic)", ("digitraffic",)),
     ("kystverket", "Norway (Kystverket)", ("kystverket",)),
-    ("vesselapi", "Failover (VesselAPI)", ("vesselapi",)),
 ]
 _PROVIDER_ONLINE_SECONDS = 15 * 60  # silent longer than this = offline
 

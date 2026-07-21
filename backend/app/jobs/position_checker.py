@@ -37,8 +37,11 @@ MAX_DELTA_ANCHORED_MIN = 12 * 60  # an anchored ship didn't move, so widen a lot
 ANCHORED_SOG = 1.5
 MAX_SEARCH_RADIUS_NM = 120
 # behaviour-only ships earn satellite verification at this risk score;
-# sanctions-listed ships always get it
-MIN_BEHAVIOUR_SCORE_FOR_SAR = 100.0
+# sanctions-listed ships always get it. Kept as a light floor (not 0) so a
+# single stray ping can't queue a check, but low enough that every ship with
+# real accumulated suspicion is verified - the pipeline analyses highest-risk
+# first, so a lower bar delays weak cases rather than starving strong ones.
+MIN_BEHAVIOUR_SCORE_FOR_SAR = 50.0
 
 _RING_RE = re.compile(r"\(\(([^()]+)\)\)")
 
