@@ -22,7 +22,7 @@ export default function RadarVerdict({
     return (
       <span style={{ color: '#f45ba8', fontWeight: 600 }}
             title="two large hulls lying alongside in the image - a ship-to-ship oil transfer">
-        ⇄ two tankers alongside — oil transfer
+        ⇄ two tankers alongside - oil transfer
       </span>
     )
   }

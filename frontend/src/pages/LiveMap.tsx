@@ -748,7 +748,7 @@ export default function LiveMap() {
 
       {feed && feed.live === false && feed.age_seconds != null && (
         <div className="feed-banner">
-          {`⚠ Live AIS feed interrupted — showing last-known positions${feed.newest ? ` (as of ${new Date(feed.newest).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC, ${Math.floor(feed.age_seconds / 3600)}h ago)` : ''}`}
+          {`⚠ Live AIS feed interrupted - showing last-known positions${feed.newest ? ` (as of ${new Date(feed.newest).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC, ${Math.floor(feed.age_seconds / 3600)}h ago)` : ''}`}
         </div>
       )}
 
@@ -966,7 +966,7 @@ export default function LiveMap() {
           <div className="legend-head" style={{ marginTop: 0 }}>Interesting spots</div>
           {feed && feed.live === false && (
             <div className="legend-note" style={{ color: '#fbbf24', margin: '0 0 0.3rem' }}>
-              ⚠ AIS feed interrupted — spots reflect data before the outage
+              ⚠ AIS feed interrupted - spots reflect data before the outage
             </div>
           )}
           {anchorages.length > 0 && (

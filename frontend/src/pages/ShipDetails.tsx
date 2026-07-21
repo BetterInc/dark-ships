@@ -79,7 +79,7 @@ export default function ShipDetails() {
   }, [mmsi])
 
   if (error) return <div className="page"><p className="error">{error}</p></div>
-  if (!info) return <div className="page"><p className="empty">Loading ship…</p></div>
+  if (!info) return <div className="page"><p className="empty">Loading ship...</p></div>
 
   const lp = info.last_pos
   // queued (not-yet-analyzed) checks are pipeline internals - readers only

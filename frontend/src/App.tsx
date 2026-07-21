@@ -112,7 +112,7 @@ export default function App() {
         </nav>
       </header>
       <main>
-        <Suspense fallback={<div className="route-loading">Loading…</div>}>
+        <Suspense fallback={<div className="route-loading">Loading...</div>}>
         <Routes>
           <Route path="/" element={<LiveMap />} />
           {/* shareable deep link to a vessel; same map, focused on the ship */}
