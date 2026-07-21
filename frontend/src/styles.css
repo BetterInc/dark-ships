@@ -980,8 +980,38 @@ a.download-btn:hover { border-color: var(--watch-other); background: var(--panel
 /* ── Stale-feed banner (upstream AIS outage) ──────────────── */
 /* pinned bottom-centre, between the legend and the interesting-spots panel,
    so it never covers the search box or the risk slider up top */
-.feed-banner {
+/* AIS provider health strip: bottom-centre on desktop, a "Feeds" chip on mobile */
+.feed-sources {
   position: absolute; bottom: 1.4rem; left: 50%; transform: translateX(-50%);
+  z-index: 4; display: flex; align-items: center; gap: 0.35rem 1rem;
+  flex-wrap: wrap; max-width: 66vw;
+  background: rgba(16, 29, 43, 0.94); border: 1px solid var(--line);
+  border-radius: 999px; padding: 0.35rem 0.95rem;
+  font-size: 11.5px; backdrop-filter: blur(4px);
+}
+.feed-sources-head {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.feed-src { display: inline-flex; align-items: center; gap: 0.5ch; white-space: nowrap; }
+.feed-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.4);
+}
+.feed-dot.on { background: #22c55e; box-shadow: 0 0 6px rgba(34, 197, 94, 0.9); }
+.feed-src-meta { color: var(--muted); }
+
+@media (max-width: 920px) {
+  .feed-sources { display: none; }
+  .feed-sources.open {
+    display: flex; flex-direction: column; align-items: flex-start;
+    left: 1rem; right: 1rem; width: auto; max-width: none; transform: none;
+    border-radius: 6px; bottom: 3.4rem; gap: 0.5rem;
+  }
+}
+
+.feed-banner {
+  position: absolute; bottom: 3.3rem; left: 50%; transform: translateX(-50%);
   z-index: 5; background: rgba(120, 53, 15, 0.94); color: #fde68a;
   border: 1px solid #b45309; border-radius: 6px;
   padding: 0.4rem 0.9rem; font-size: 12.5px; font-weight: 600;

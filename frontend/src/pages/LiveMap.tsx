@@ -244,6 +244,7 @@ export default function LiveMap() {
   // mobile: the legend / anchorage panels collapse behind toggle chips
   const [showLegend, setShowLegend] = useState(false)
   const [showClusters, setShowClusters] = useState(false)
+  const [showSources, setShowSources] = useState(false)
   // Per-layer visibility, persisted. Everything defaults ON - the full picture
   // (ordinary traffic + all threat categories) is the catchy first impression;
   // the toggles let an operator subtract what they don't need.
@@ -324,6 +325,7 @@ export default function LiveMap() {
   const { positions, geojson: vesselsGeojson } = useLatestPositions(90_000)
   const { data: clusters } = usePolling<Cluster[]>('/clusters', 60_000)
   const { data: feed } = usePolling<{ newest: string | null; age_seconds: number | null; live: boolean }>('/feed/status', 120_000)
+  const { data: feedSources } = usePolling<{ providers: { id: string; label: string; online: boolean; age_seconds: number | null; ships: number }[] }>('/feed/sources', 120_000)
 
   // Shareable deep link: on first load, focus the ship named in /ship/<mmsi>.
   // Reads the value captured at mount, so the URL-sync effect below can't race
@@ -943,13 +945,19 @@ export default function LiveMap() {
           shows the panels as always */}
       <div className="panel-toggles">
         <button className={`panel-toggle${showLegend ? ' on' : ''}`}
-                onClick={() => { setShowLegend((v) => !v); setShowClusters(false) }}>
+                onClick={() => { setShowLegend((v) => !v); setShowClusters(false); setShowSources(false) }}>
           Legend
         </button>
         {clusters && clusters.length > 0 && (
           <button className={`panel-toggle${showClusters ? ' on' : ''}`}
-                  onClick={() => { setShowClusters((v) => !v); setShowLegend(false) }}>
+                  onClick={() => { setShowClusters((v) => !v); setShowLegend(false); setShowSources(false) }}>
             Hotspots
+          </button>
+        )}
+        {feedSources && feedSources.providers.length > 0 && (
+          <button className={`panel-toggle${showSources ? ' on' : ''}`}
+                  onClick={() => { setShowSources((v) => !v); setShowLegend(false); setShowClusters(false) }}>
+            Feeds
           </button>
         )}
       </div>
@@ -1017,6 +1025,27 @@ export default function LiveMap() {
         <LegendToggle k="spots" on={layers.spots} onToggle={toggleLayer} color="#8b5cf6" label="Interesting spots (anchorages / hotspots)" />
         <div className="legend-note">click a row to show / hide it · ▲ underway · ● stopped · size = risk</div>
       </div>
+
+      {feedSources && feedSources.providers.length > 0 && (
+        <div className={`feed-sources${showSources ? ' open' : ''}`}>
+          <span className="feed-sources-head">AIS feeds</span>
+          {feedSources.providers.map((p) => {
+            const a = p.age_seconds
+            const ago = a == null ? 'no data'
+              : a < 90 ? 'live'
+              : a < 3600 ? `${Math.floor(a / 60)}m ago`
+              : a < 86400 ? `${Math.floor(a / 3600)}h ago`
+              : `${Math.floor(a / 86400)}d ago`
+            return (
+              <span key={p.id} className="feed-src" title={`${p.label}: ${p.online ? `${p.ships.toLocaleString()} ships live` : `offline · last data ${ago}`}`}>
+                <span className={`feed-dot${p.online ? ' on' : ''}`} />
+                {p.label.replace(/ \(.*\)/, '')}
+                <span className="feed-src-meta">{p.online ? `${p.ships.toLocaleString()}` : ago}</span>
+              </span>
+            )
+          })}
+        </div>
+      )}
     </>
   )
 }

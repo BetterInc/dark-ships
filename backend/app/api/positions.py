@@ -128,6 +128,50 @@ async def feed_status(session: AsyncSession = Depends(get_session)):
         headers={"Cache-Control": "public, max-age=60"})
 
 
+# The integrated AIS providers, each folding one or more raw `source` tags. This
+# is the one place we surface provenance (a status display) - the stream itself
+# stays source-agnostic. `region`/`world` are both the aisstream firehose.
+_PROVIDERS = [
+    ("aisstream", "Global (aisstream)", ("region", "world")),
+    ("digitraffic", "Finland (Digitraffic)", ("digitraffic",)),
+    ("kystverket", "Norway (Kystverket)", ("kystverket",)),
+    ("vesselapi", "Failover (VesselAPI)", ("vesselapi",)),
+]
+_PROVIDER_ONLINE_SECONDS = 15 * 60  # silent longer than this = offline
+
+
+@router.get("/feed/sources")
+async def feed_sources(session: AsyncSession = Depends(get_session)):
+    """Per-provider health for the map's feed strip: for each integrated AIS
+    source, how fresh its newest fix is and how many ships it currently leads.
+    Ships counts rows where that source is the freshest (won the upsert), so it
+    reflects a provider's live contribution, not stale last-known rows."""
+    now = datetime.now(timezone.utc)
+    rows = (await session.execute(
+        select(LatestPosition.source, func.max(LatestPosition.ts), func.count())
+        .group_by(LatestPosition.source))).all()
+    by_source = {s: (ts, n) for s, ts, n in rows}
+    providers = []
+    for pid, label, srcs in _PROVIDERS:
+        newest = None
+        ships = 0
+        for s in srcs:
+            if s in by_source:
+                ts, n = by_source[s]
+                ships += n
+                if newest is None or ts > newest:
+                    newest = ts
+        age = int((now - newest).total_seconds()) if newest else None
+        providers.append({
+            "id": pid, "label": label,
+            "online": age is not None and age < _PROVIDER_ONLINE_SECONDS,
+            "age_seconds": age, "ships": ships,
+        })
+    return Response(json.dumps({"providers": providers}),
+                    media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=30"})
+
+
 async def _rebuild_latest(since_hours: float) -> tuple[bytes, bytes, bytes, bytes]:
     from ..db import SessionLocal
     async with SessionLocal() as session:
