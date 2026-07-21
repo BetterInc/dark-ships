@@ -213,11 +213,14 @@ async def _latest_rows(session: AsyncSession, since_hours: float) -> list[dict]:
     # Feed-outage resilience: normally show ships seen in the last `since_hours`.
     # But if the ingest feed has stalled (upstream AIS provider down), the
     # freshest row is hours old and the normal window would be EMPTY - a blank
-    # map. In that case widen to the last 14 days so the map shows every ship's
-    # LAST-KNOWN real position (never extrapolated), and the UI flags it stale.
+    # map. In that case anchor the window to the LAST DATA WE HAVE: show the
+    # fleet exactly as it was in the `since_hours` before the feed died. Same
+    # ~66k size (not a 14-day, 166k-ship pile that renders slowly), and it's
+    # the honest "last-known picture" - real positions, never extrapolated.
     newest = await session.scalar(select(func.max(LatestPosition.ts)))
     stale = newest is not None and (now - newest) > timedelta(hours=2)
-    since = now - timedelta(days=14) if stale else now - timedelta(hours=since_hours)
+    anchor = newest if stale else now
+    since = anchor - timedelta(hours=since_hours)
     result = await session.execute(
         # __table__ expands to flat columns (like the old subquery select did),
         # so dict(r._mapping) below keeps its shape
