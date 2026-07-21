@@ -114,14 +114,20 @@ async def feed_status(session: AsyncSession = Depends(get_session)):
     """Ingest health for the map's stale-feed banner: how old the freshest
     received position is. `live` false = the upstream AIS feed has stalled and
     the map is showing last-known positions."""
-    newest = await session.scalar(select(func.max(LatestPosition.ts)))
-    age = None
-    if newest is not None:
-        age = int((datetime.now(timezone.utc) - newest).total_seconds())
+    now = datetime.now(timezone.utc)
+    # primary feed age (aisstream); separately whether the failover has fresh data
+    primary = await session.scalar(select(func.max(LatestPosition.ts)).where(
+        LatestPosition.source != "vesselapi"))
+    failover = await session.scalar(select(func.max(LatestPosition.ts)).where(
+        LatestPosition.source == "vesselapi"))
+    age = int((now - primary).total_seconds()) if primary else None
+    primary_live = age is not None and age < 2 * 3600
+    failover_live = failover is not None and (now - failover) < timedelta(hours=2)
     return Response(
-        json.dumps({"newest": newest.isoformat() if newest else None,
+        json.dumps({"newest": primary.isoformat() if primary else None,
                     "age_seconds": age,
-                    "live": age is not None and age < 2 * 3600}),
+                    "live": primary_live,
+                    "failover": (not primary_live) and failover_live}),
         media_type="application/json",
         headers={"Cache-Control": "public, max-age=60"})
 
@@ -210,14 +216,14 @@ async def _latest_rows(session: AsyncSession, since_hours: float) -> list[dict]:
     maintained by the ingester) - NOT by DISTINCT-ON scanning the position
     history, which grows by millions of rows per day and took >10s."""
     now = datetime.now(timezone.utc)
-    # Feed-outage resilience: normally show ships seen in the last `since_hours`.
-    # But if the ingest feed has stalled (upstream AIS provider down), the
-    # freshest row is hours old and the normal window would be EMPTY - a blank
-    # map. In that case anchor the window to the LAST DATA WE HAVE: show the
-    # fleet exactly as it was in the `since_hours` before the feed died. Same
-    # ~66k size (not a 14-day, 166k-ship pile that renders slowly), and it's
-    # the honest "last-known picture" - real positions, never extrapolated.
-    newest = await session.scalar(select(func.max(LatestPosition.ts)))
+    # Feed-outage resilience. Staleness is judged on the PRIMARY feed only
+    # (aisstream region/world) - not the vesselapi failover, which covers just
+    # the monitored regions. When the primary has stalled, anchor the window to
+    # the last primary data so the map shows the full last-known fleet, and any
+    # fresher failover positions (ts = now, inside the window) overlay live.
+    # ~66k size, honest last-known picture (real positions, never extrapolated).
+    newest = await session.scalar(select(func.max(LatestPosition.ts)).where(
+        LatestPosition.source != "vesselapi"))
     stale = newest is not None and (now - newest) > timedelta(hours=2)
     anchor = newest if stale else now
     since = anchor - timedelta(hours=since_hours)
