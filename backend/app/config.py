@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     # S3-compatible storage as the cold tier (MinIO locally, Wasabi in prod).
     cdse_sh_client_id: str = ""
     cdse_sh_client_secret: str = ""
+    # Secondary AIS source (vesselapi.com) used ONLY as failover when the
+    # primary aisstream feed stalls - keeps the monitored regions live during
+    # an outage. Free-tier REST bounding-box; blank = no failover.
+    vesselapi_key: str = ""
     # ONNX ship-detection model for the chips (YOLOv11m/SSDD). When the file
     # is missing the detector falls back to the classical CFAR thresholder.
     sar_model_path: str = "models/sar_ship_yolov11m.onnx"
