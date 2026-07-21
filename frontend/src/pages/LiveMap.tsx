@@ -323,7 +323,7 @@ export default function LiveMap() {
 
   const { positions, geojson: vesselsGeojson } = useLatestPositions(90_000)
   const { data: clusters } = usePolling<Cluster[]>('/clusters', 60_000)
-  const { data: feed } = usePolling<{ newest: string | null; age_seconds: number | null; live: boolean; failover: boolean }>('/feed/status', 120_000)
+  const { data: feed } = usePolling<{ newest: string | null; age_seconds: number | null; live: boolean }>('/feed/status', 120_000)
 
   // Shareable deep link: on first load, focus the ship named in /ship/<mmsi>.
   // Reads the value captured at mount, so the URL-sync effect below can't race
@@ -748,9 +748,7 @@ export default function LiveMap() {
 
       {feed && feed.live === false && feed.age_seconds != null && (
         <div className="feed-banner">
-          {feed.failover
-            ? '⚡ Primary AIS feed down — failover feed live in monitored regions, rest showing last-known'
-            : `⚠ Live AIS feed interrupted — showing last-known positions${feed.newest ? ` (as of ${new Date(feed.newest).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC, ${Math.floor(feed.age_seconds / 3600)}h ago)` : ''}`}
+          {`⚠ Live AIS feed interrupted — showing last-known positions${feed.newest ? ` (as of ${new Date(feed.newest).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC, ${Math.floor(feed.age_seconds / 3600)}h ago)` : ''}`}
         </div>
       )}
 
@@ -966,6 +964,11 @@ export default function LiveMap() {
         return (
         <div className={`cluster-panel${showClusters ? ' open' : ''}`}>
           <div className="legend-head" style={{ marginTop: 0 }}>Interesting spots</div>
+          {feed && feed.live === false && (
+            <div className="legend-note" style={{ color: '#fbbf24', margin: '0 0 0.3rem' }}>
+              ⚠ AIS feed interrupted — spots reflect data before the outage
+            </div>
+          )}
           {anchorages.length > 0 && (
             <div className="legend-note" style={{ margin: '0.1rem 0 0.2rem' }}>⚓ Fleet anchorages</div>
           )}

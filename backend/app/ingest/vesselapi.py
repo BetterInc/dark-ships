@@ -1,15 +1,16 @@
-"""VesselAPI failover ingest (secondary AIS source).
+"""VesselAPI - a secondary provider feeding the one unified position stream.
 
-aisstream.io is the primary live feed; when it stalls (upstream outage) the map
-would otherwise freeze. VesselAPI (vesselapi.com) is a free-tier REST source
-with a bounding-box query - not a full-firehose replacement, but enough to keep
-the MONITORED REGIONS live during an outage.
+Every AIS provider writes to the SAME latest_positions / positions tables; the
+rest of the system (map, clusters, behaviour engine, SAR, digests) reads that
+one stream and never distinguishes who delivered a fix. `source` is just
+provenance metadata, not a separate data path.
 
-To respect the free tier, this only spends quota when the primary feed is
-actually stale: the scheduled job checks the freshest received position first
-and returns immediately if aisstream is healthy. Writes go to the same
-latest_positions / positions tables as the primary, tagged source='vesselapi',
-plus an ingest heartbeat so the coverage guard and /feed/status see us as live.
+aisstream.io carries the firehose; VesselAPI (vesselapi.com) is a free-tier
+REST bounding-box source - not a full replacement, but enough to keep the
+MONITORED REGIONS live when aisstream stalls. The only source-aware logic lives
+HERE, in provider selection: to respect the free tier we spend VesselAPI quota
+only while the *primary* feed is stale (checked below), then contribute to the
+same stream tagged source='vesselapi' plus an ingest heartbeat.
 """
 
 import logging
@@ -101,14 +102,18 @@ async def _fetch_tile(client: httpx.AsyncClient, key: str, tile) -> tuple[list[d
 
 
 async def run_vesselapi_failover() -> None:
-    """Poll VesselAPI for the monitored regions and write positions - but ONLY
-    when the primary feed is stale, so the free tier isn't spent while
+    """Poll VesselAPI for the monitored regions and contribute to the stream -
+    but ONLY while the primary feed is stale, so the free tier isn't spent while
     aisstream is healthy."""
     s = get_settings()
     if not s.vesselapi_key:
         return
     async with SessionLocal() as session:
-        newest = await session.scalar(select(func.max(LatestPosition.ts)))
+        # Gate on the PRIMARY provider's freshness, not the whole stream: our
+        # own writes (source='vesselapi') would otherwise keep max(ts) fresh and
+        # suppress every subsequent poll after the first one.
+        newest = await session.scalar(select(func.max(LatestPosition.ts)).where(
+            LatestPosition.source != "vesselapi"))
         now = datetime.now(timezone.utc)
         if newest is not None and (now - newest) < STALE_AFTER:
             return  # primary feed is fresh - don't spend quota
