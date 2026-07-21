@@ -25,6 +25,7 @@ from .jobs.behavior import run_behavior_scan
 from .jobs.gap_detector import run_gap_detection
 from .ingest.vesselapi import run_vesselapi_failover
 from .ingest.digitraffic import run_digitraffic
+from .ingest.aivdm_tcp import run_aivdm_feed
 from .jobs.partitions import ensure_partitions
 from .jobs.coverage import sweep_outage_gap_events
 from .jobs.notifier import run_follow_digests
@@ -154,6 +155,12 @@ async def lifespan(app: FastAPI):
                 settings.run_mode.upper())
     await init_db()
     start_ingest(tasks)
+    # free national AIS feeds that contribute to the same stream
+    if settings.kystverket_enabled:
+        tasks.append(asyncio.create_task(
+            run_aivdm_feed("kystverket", settings.kystverket_host,
+                           settings.kystverket_port, "kystverket"),
+            name="kystverket"))
 
     scheduler = AsyncIOScheduler(timezone="UTC")
     # NOTE: no next_run_time=None here - in APScheduler that adds the job

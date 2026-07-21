@@ -108,6 +108,11 @@ class Settings(BaseSettings):
     # shadow-fleet oil corridor - so that region stays live independent of
     # aisstream. Set false to disable.
     digitraffic_enabled: bool = True
+    # Free Norwegian AIS: Kystverket's anonymous AIVDM TCP stream (no key) -
+    # real-time coast/North Sea coverage. Set false to disable.
+    kystverket_enabled: bool = True
+    kystverket_host: str = "153.44.253.27"
+    kystverket_port: int = 5631
     # ONNX ship-detection model for the chips (YOLOv11m/SSDD). When the file
     # is missing the detector falls back to the classical CFAR thresholder.
     sar_model_path: str = "models/sar_ship_yolov11m.onnx"
