@@ -20,7 +20,7 @@ import httpx
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from ..config import get_settings
+from ..config import Region, get_settings
 from ..db import SessionLocal
 from ..models import IngestHeartbeat, LatestPosition, Position
 
@@ -32,6 +32,24 @@ TILE_DEG = 2.0                     # VesselAPI rejects boxes larger than ~2 degr
 MAX_TILES = 80                     # request budget per run (only spent during outages)
 MAX_PAGES_PER_TILE = 4             # dense coastal tiles paginate; open sea is 1 page
 PAGE_TIMEOUT = 20.0
+
+# aisstream carries a world firehose that needs no region list, so prod often
+# runs with ais_regions empty. VesselAPI can only query bounding boxes, so it
+# needs its own coverage: the known shadow-fleet / sanctions / narco corridors
+# where keeping ships visible during an outage matters most. Used whenever no
+# regions are configured, so the failover is self-sufficient. bbox is
+# [[latMin, lonMin], [latMax, lonMax]]; tiled to <=2deg and capped by MAX_TILES.
+DEFAULT_FAILOVER_REGIONS = [
+    Region(name="Fujairah / Gulf of Oman", bbox=[[24.0, 56.0], [26.5, 58.5]]),
+    Region(name="Strait of Hormuz", bbox=[[25.5, 54.5], [27.0, 57.0]]),
+    Region(name="Laconian Gulf", bbox=[[35.5, 22.0], [37.5, 24.5]]),
+    Region(name="Kerch Strait / NE Black Sea", bbox=[[44.0, 35.5], [46.0, 38.5]]),
+    Region(name="Gulf of Finland", bbox=[[59.0, 22.0], [60.7, 28.5]]),
+    Region(name="Malacca / Singapore Strait", bbox=[[0.5, 100.0], [4.5, 104.5]]),
+    Region(name="Gibraltar / Ceuta", bbox=[[35.5, -6.0], [36.3, -4.5]]),
+    Region(name="SE Caribbean / Venezuela", bbox=[[9.5, -68.0], [12.5, -61.0]]),
+    Region(name="Gulf of Guinea / Lome", bbox=[[3.5, 0.0], [6.5, 4.0]]),
+]
 
 
 def _tiles(bbox):
@@ -118,9 +136,9 @@ async def run_vesselapi_failover() -> None:
         if newest is not None and (now - newest) < STALE_AFTER:
             return  # primary feed is fresh - don't spend quota
 
-        regions = s.ais_regions
-        if not regions:
-            return
+        # configured regions if any, else the built-in shadow-fleet corridors -
+        # so the failover works even when prod runs world-feed-only (no regions).
+        regions = s.ais_regions or DEFAULT_FAILOVER_REGIONS
         # tile all regions into <=2deg boxes, priority order (config lists the
         # shadow-fleet regions first), capped to a per-run request budget
         tiles = [t for reg in regions for t in _tiles(reg.bbox)][:MAX_TILES]

@@ -103,6 +103,11 @@ class Settings(BaseSettings):
     # primary aisstream feed stalls - keeps the monitored regions live during
     # an outage. Free-tier REST bounding-box; blank = no failover.
     vesselapi_key: str = ""
+    # Free national AIS feed (Finnish Digitraffic, no key). Runs continuously as
+    # a permanent source for the Gulf of Finland / northern Baltic - the Russian
+    # shadow-fleet oil corridor - so that region stays live independent of
+    # aisstream. Set false to disable.
+    digitraffic_enabled: bool = True
     # ONNX ship-detection model for the chips (YOLOv11m/SSDD). When the file
     # is missing the detector falls back to the classical CFAR thresholder.
     sar_model_path: str = "models/sar_ship_yolov11m.onnx"

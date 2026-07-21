@@ -24,6 +24,7 @@ from .ingest.aisstream import start_ingest
 from .jobs.behavior import run_behavior_scan
 from .jobs.gap_detector import run_gap_detection
 from .ingest.vesselapi import run_vesselapi_failover
+from .ingest.digitraffic import run_digitraffic
 from .jobs.partitions import ensure_partitions
 from .jobs.coverage import sweep_outage_gap_events
 from .jobs.notifier import run_follow_digests
@@ -163,6 +164,8 @@ async def lifespan(app: FastAPI):
     # failover AIS: fills the monitored regions from VesselAPI, but only when
     # the primary aisstream feed is stale (self-checks, so it's cheap normally)
     scheduler.add_job(run_vesselapi_failover, "interval", minutes=5)
+    # free national AIS: always-on Baltic / Gulf of Finland coverage
+    scheduler.add_job(run_digitraffic, "interval", seconds=90)
     scheduler.add_job(run_behavior_scan, "interval", minutes=10)
     # follow digests ride behind the scan so fresh events reach inboxes fast
     scheduler.add_job(run_follow_digests, "interval", minutes=15)
@@ -181,6 +184,7 @@ async def lifespan(app: FastAPI):
     # First runs shortly after startup, so you don't have to wait
     tasks.append(asyncio.create_task(_initial_gap_run()))
     tasks.append(asyncio.create_task(_initial_behavior_run()))
+    tasks.append(asyncio.create_task(_initial_digitraffic_run()))
 
     yield
 
@@ -196,6 +200,14 @@ async def _initial_gap_run() -> None:
         await run_gap_detection()
     except Exception:
         logger.exception("Initial gap detection run failed")
+
+
+async def _initial_digitraffic_run() -> None:
+    await asyncio.sleep(10)
+    try:
+        await run_digitraffic()  # get the Baltic live immediately on boot
+    except Exception:
+        logger.exception("Initial Digitraffic run failed")
 
 
 async def _initial_behavior_run() -> None:
