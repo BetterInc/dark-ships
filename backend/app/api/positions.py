@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import TypeAdapter
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
@@ -109,6 +109,23 @@ PATTERN_LABELS = {
 router = APIRouter(prefix="/api", tags=["positions"])
 
 
+@router.get("/feed/status")
+async def feed_status(session: AsyncSession = Depends(get_session)):
+    """Ingest health for the map's stale-feed banner: how old the freshest
+    received position is. `live` false = the upstream AIS feed has stalled and
+    the map is showing last-known positions."""
+    newest = await session.scalar(select(func.max(LatestPosition.ts)))
+    age = None
+    if newest is not None:
+        age = int((datetime.now(timezone.utc) - newest).total_seconds())
+    return Response(
+        json.dumps({"newest": newest.isoformat() if newest else None,
+                    "age_seconds": age,
+                    "live": age is not None and age < 2 * 3600}),
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=60"})
+
+
 async def _rebuild_latest(since_hours: float) -> tuple[bytes, bytes, bytes, bytes]:
     from ..db import SessionLocal
     async with SessionLocal() as session:
@@ -192,7 +209,15 @@ async def _latest_rows(session: AsyncSession, since_hours: float) -> list[dict]:
     """Build the current picture from latest_positions (one row per ship,
     maintained by the ingester) - NOT by DISTINCT-ON scanning the position
     history, which grows by millions of rows per day and took >10s."""
-    since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    now = datetime.now(timezone.utc)
+    # Feed-outage resilience: normally show ships seen in the last `since_hours`.
+    # But if the ingest feed has stalled (upstream AIS provider down), the
+    # freshest row is hours old and the normal window would be EMPTY - a blank
+    # map. In that case widen to the last 14 days so the map shows every ship's
+    # LAST-KNOWN real position (never extrapolated), and the UI flags it stale.
+    newest = await session.scalar(select(func.max(LatestPosition.ts)))
+    stale = newest is not None and (now - newest) > timedelta(hours=2)
+    since = now - timedelta(days=14) if stale else now - timedelta(hours=since_hours)
     result = await session.execute(
         # __table__ expands to flat columns (like the old subquery select did),
         # so dict(r._mapping) below keeps its shape
