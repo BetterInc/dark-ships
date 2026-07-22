@@ -10,6 +10,8 @@ ship is served from our own recorded data (no dedicated provider slot).
 import asyncio
 import json
 import logging
+import random
+import time
 from datetime import datetime, timezone
 
 import websockets
@@ -26,6 +28,14 @@ AISSTREAM_URL = "wss://stream.aisstream.io/v0/stream"
 GLOBAL_BBOX = [[[-90.0, -180.0], [90.0, 180.0]]]
 FLUSH_INTERVAL_SECONDS = 2.0
 SNAPSHOT_MAINTENANCE_SECONDS = 60
+# Reconnect backoff. During a prolonged upstream outage (e.g. the July 2026
+# one, where stream.aisstream.io shed load with 503s for days) retrying every
+# minute just adds to the reconnect stampede that keeps the server overloaded,
+# so the cap is generous. Backoff only resets after a connection has proven
+# stable - a connection that lives 30s during flappy recovery shouldn't put us
+# back to hammering.
+RECONNECT_BACKOFF_MAX_SECONDS = 15 * 60
+RECONNECT_STABLE_SECONDS = 5 * 60
 
 # Class A transponders (large commercial vessels) send PositionReport;
 # Class B (fishing boats, yachts, small workboats) send the two ClassB
@@ -175,6 +185,7 @@ class AisStreamConnection:
             return
         backoff = 1
         while True:
+            connected_at = None
             try:
                 sub = await self._subscription()
                 if sub is None:
@@ -184,15 +195,22 @@ class AisStreamConnection:
                     # The subscription must arrive within 3s of connecting
                     await ws.send(json.dumps(sub))
                     logger.info("[%s] connected and subscribed", self.label)
-                    backoff = 1
+                    connected_at = time.monotonic()
                     self.resubscribe.clear()
                     await self._consume(ws)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                logger.warning("[%s] connection lost (%s) - retrying in %ds", self.label, exc, backoff)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 60)
+                if connected_at is not None and \
+                        time.monotonic() - connected_at >= RECONNECT_STABLE_SECONDS:
+                    backoff = 1
+                # Full jitter: desynchronizes us from every other client
+                # retrying against the same recovering endpoint.
+                delay = random.uniform(backoff / 2, backoff)
+                logger.warning("[%s] connection lost (%s) - retrying in %.0fs",
+                               self.label, exc, delay)
+                await asyncio.sleep(delay)
+                backoff = min(backoff * 2, RECONNECT_BACKOFF_MAX_SECONDS)
 
     async def _consume(self, ws) -> None:
         loop = asyncio.get_running_loop()
