@@ -29,7 +29,6 @@ today are NLOD/CC-BY. See [[ais-source-strategy]].
 
 import asyncio
 import contextlib
-import csv
 import io
 import logging
 import os
@@ -135,20 +134,31 @@ def _parse_csv(fileobj, mmsis: set[int] | None,
                bbox: tuple[float, float, float, float] | None):
     """Stream a DMA CSV, filter by mmsi set and/or bbox, and return
     (all_points, newest_by_mmsi). all_points backfills history; newest_by drives
-    the advance-only latest_positions upsert."""
-    reader = csv.reader(fileobj)
-    header_skipped = False
+    the advance-only latest_positions upsert.
+
+    A day is ~15-25M rows and we usually keep only the watchlist subset, so the
+    hot loop must be cheap. We split on ',' and, for the common MMSI-filtered
+    case, test the MMSI (field 2) BEFORE doing any per-row work - skipping ~all
+    lines with a single split+set lookup. csv.reader here was ~10-30x slower and
+    pegged the 1-CPU worker for minutes per day. Fields 0-9 and 12 (all we read)
+    precede the free-text Name/Destination, and fields 0-11 never contain commas
+    (numbers and fixed enums), so a naive split is safe for the values we use."""
+    mmsi_strs = {str(m) for m in mmsis} if mmsis is not None else None
     all_points: list[dict] = []
     newest_by: dict[int, dict] = {}
-    for fields in reader:
-        if not header_skipped:
-            header_skipped = True
-            if fields and fields[0].lstrip().startswith("# Timestamp"):
+    first = True
+    for line in fileobj:
+        if first:
+            first = False
+            if line.lstrip().startswith("# Timestamp"):
                 continue  # header line
-        row = _row(fields)
+        if mmsi_strs is not None:
+            # cheap pre-filter: MMSI is the 3rd field
+            head = line.split(",", 3)
+            if len(head) < 3 or head[2] not in mmsi_strs:
+                continue
+        row = _row(line.rstrip("\r\n").split(","))
         if row is None:
-            continue
-        if mmsis is not None and row["mmsi"] not in mmsis:
             continue
         if bbox is not None and not _in_bbox(row, bbox):
             continue
