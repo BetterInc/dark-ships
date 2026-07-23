@@ -28,9 +28,12 @@ today are NLOD/CC-BY. See [[ais-source-strategy]].
 """
 
 import asyncio
+import contextlib
 import csv
 import io
 import logging
+import os
+import tempfile
 import zipfile
 from datetime import datetime, timedelta, timezone
 
@@ -200,20 +203,31 @@ async def _write(all_points: list[dict], newest_by: dict[int, dict],
     return len(all_points)
 
 
-def _download_csv(date_str: str) -> io.TextIOWrapper:
-    """Download aisdk-<date>.zip into memory and return a text stream over its
-    single CSV entry. Kept sync (blocking IO) - callers hop to a thread."""
+@contextlib.contextmanager
+def _download_csv(date_str: str):
+    """Stream aisdk-<date>.zip to a temp file and yield a text stream over its
+    single CSV entry. Streaming to disk (not BytesIO) keeps memory flat and
+    small - the daily zip is ~700 MB-1 GB and the worker pod has a 2 GB limit,
+    so buffering the whole file in RAM would risk an OOM. Kept sync (blocking
+    IO) - callers hop to a thread."""
     url = f"{DMA_BUCKET}/aisdk-{date_str}.zip"
     logger.info("DMA: downloading %s", url)
-    with httpx.stream("GET", url, timeout=600.0, follow_redirects=True) as resp:
-        resp.raise_for_status()
-        buf = io.BytesIO()
-        for chunk in resp.iter_bytes(1 << 20):
-            buf.write(chunk)
-    buf.seek(0)
-    zf = zipfile.ZipFile(buf)
-    name = next(n for n in zf.namelist() if n.lower().endswith(".csv"))
-    return io.TextIOWrapper(zf.open(name), encoding="latin-1", newline="")
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    try:
+        with httpx.stream("GET", url, timeout=600.0, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            for chunk in resp.iter_bytes(1 << 20):
+                tmp.write(chunk)
+        tmp.close()
+        with zipfile.ZipFile(tmp.name) as zf:
+            name = next(n for n in zf.namelist() if n.lower().endswith(".csv"))
+            with zf.open(name) as raw:
+                yield io.TextIOWrapper(raw, encoding="latin-1", newline="")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
 
 
 def _download_and_parse(date_str: str, mmsis, bbox):
