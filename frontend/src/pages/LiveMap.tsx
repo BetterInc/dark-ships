@@ -630,13 +630,28 @@ export default function LiveMap() {
         const coords = (amb.f.geometry as GeoJSON.Point).coordinates
         // the live feed often knows the name before our registry does - keep it
         const liveName = amb.f.properties?.name as string | undefined
+        const sog = (amb.f.properties?.sog as number | undefined) ?? null
+        const bearing = (amb.f.properties?.bearing as number | undefined) ?? null
+        const liveDisplayName = liveName && liveName !== String(mmsi) ? liveName : null
+        // Select IMMEDIATELY using data already in the clicked feature, so the
+        // track (green line) fetch fires now - in PARALLEL with /info, not
+        // serialized behind it (that serialization was ~750ms click->line).
+        // /info then enriches the panel with registry details when it returns.
+        clearAll(); setSelected(null)
+        setSelectedAmbient({
+          mmsi, name: liveDisplayName, imo: null, ship_type: null,
+          destination: null, flag: null, on_watchlist: false, category: null,
+          risk_score: null, notes: null, patterns: [], last_pos: null,
+          lat: coords[1], lon: coords[0], sog, bearing,
+        })
         api<Omit<AmbientInfo, 'lat' | 'lon' | 'sog' | 'bearing'>>(`/vessels/${mmsi}/info`)
           .then((info) => {
-            clearAll(); setSelected(null)
-            const name = info.name ?? (liveName && liveName !== String(mmsi) ? liveName : null)
-            setSelectedAmbient({ ...info, name, lat: coords[1], lon: coords[0],
-              sog: (amb.f.properties?.sog as number | undefined) ?? null,
-              bearing: (amb.f.properties?.bearing as number | undefined) ?? null })
+            setSelectedAmbient((prev) => {
+              // ignore if the user has since clicked a different ship
+              if (!prev || prev.mmsi !== mmsi) return prev
+              return { ...info, name: info.name ?? liveDisplayName,
+                lat: coords[1], lon: coords[0], sog, bearing }
+            })
           }).catch(() => {})
       }
     }
@@ -744,7 +759,10 @@ export default function LiveMap() {
         }] : [],
       })
     }).catch(() => source?.setData({ type: 'FeatureCollection', features: [] }))
-  }, [mapReady, selected, selectedAmbient])
+    // key on mmsi, not the object: the ambient panel replaces its selection
+    // object once /info enriches it, and we must not refetch the track for the
+    // same ship when that happens.
+  }, [mapReady, selected?.mmsi, selectedAmbient?.mmsi])
 
   return (
     <>
