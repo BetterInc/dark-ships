@@ -109,6 +109,11 @@ class Settings(BaseSettings):
     kystverket_enabled: bool = True
     kystverket_host: str = "153.44.253.27"
     kystverket_port: int = 5631
+    # Denmark DMA historical AIS (free open data, ~3-day-lagged daily CSV
+    # archive). Batch enrichment of Danish / SW-Baltic track history for the
+    # watchlist. OFF by default: each daily file is a ~700 MB-1 GB download.
+    # Backfill on demand via `python -m app.ingest.dma`. See ingest/dma.py.
+    dma_enabled: bool = False
     # ONNX ship-detection model for the chips (YOLOv11m/SSDD). When the file
     # is missing the detector falls back to the classical CFAR thresholder.
     sar_model_path: str = "models/sar_ship_yolov11m.onnx"

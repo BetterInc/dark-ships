@@ -24,6 +24,7 @@ from .ingest.aisstream import start_ingest
 from .jobs.behavior import run_behavior_scan
 from .jobs.gap_detector import run_gap_detection
 from .ingest.digitraffic import run_digitraffic
+from .ingest.dma import run_dma_backfill
 from .ingest.aivdm_tcp import run_aivdm_feed
 from .jobs.partitions import ensure_partitions
 from .jobs.coverage import sweep_outage_gap_events
@@ -170,6 +171,9 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(run_gap_detection, "interval", minutes=5)
     # free national AIS: always-on Baltic / Gulf of Finland coverage
     scheduler.add_job(run_digitraffic, "interval", seconds=90)
+    # Denmark DMA daily historical backfill (self-gates on dma_enabled; the
+    # newest file is ~3 days behind, so run well after midnight UTC)
+    scheduler.add_job(run_dma_backfill, "cron", hour=6, minute=30)
     scheduler.add_job(run_behavior_scan, "interval", minutes=10)
     # follow digests ride behind the scan so fresh events reach inboxes fast
     scheduler.add_job(run_follow_digests, "interval", minutes=15)
