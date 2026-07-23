@@ -40,6 +40,11 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     # follow-digest cooldown: when we last emailed this user about new
     # activity on their followed ships (NULL = never)
     last_digest_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # How far back a vessel track is drawn when this user clicks a ship, in
+    # hours. Anonymous visitors always get the 72h default; registering lets a
+    # user raise it (server caps at 30 days - see TRACK_WINDOW_MAX_HOURS).
+    track_window_hours: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=72, server_default="72")
     oauth_accounts: Mapped[list[OAuthAccount]] = relationship(
         "OAuthAccount", lazy="joined"
     )

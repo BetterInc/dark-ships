@@ -18,6 +18,7 @@ const Login = lazy(() => import('./pages/Login'))
 const Monitor = lazy(() => import('./pages/Monitor'))
 const Register = lazy(() => import('./pages/Register'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const Settings = lazy(() => import('./pages/Settings'))
 const ShipDetails = lazy(() => import('./pages/ShipDetails'))
 const Sources = lazy(() => import('./pages/Sources'))
 const Suggestions = lazy(() => import('./pages/Suggestions'))
@@ -98,6 +99,9 @@ export default function App() {
           <span className="nav-sep" aria-hidden />
           {user ? (
             <span className="nav-account">
+              <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Settings
+              </NavLink>
               <span className="nav-email" title={user.email}>{user.email}</span>
               <button className="ghost nav-logout" onClick={logout}>Logout</button>
             </span>
@@ -129,6 +133,7 @@ export default function App() {
           <Route path="/events" element={<RequireAuth><Events /></RequireAuth>} />
           <Route path="/imagery" element={<RequireAuth><Imagery /></RequireAuth>} />
           <Route path="/admin" element={<RequireAuth admin><Admin /></RequireAuth>} />
+          <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
           <Route path="/sources" element={<Sources />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />

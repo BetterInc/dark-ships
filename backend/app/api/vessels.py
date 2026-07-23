@@ -239,9 +239,18 @@ async def vessel_events(mmsi: int, limit: int = Query(100, le=500),
 @router.get("/{mmsi}/track", response_model=list[PositionOut])
 async def vessel_track(
     mmsi: int,
-    hours: float = Query(48, le=24 * 30),
+    hours: float | None = Query(None, gt=0, le=24 * 30),
     session: AsyncSession = Depends(get_session),
+    user=Depends(current_user_optional),
 ):
+    # How far back to draw the track. Anonymous visitors are fixed at the
+    # default; a signed-in user's saved preference raises their ceiling. An
+    # explicit ?hours= is honoured but never above what the viewer is allowed,
+    # so the cap can't be bypassed by passing a bigger number.
+    from ..auth import TRACK_WINDOW_DEFAULT_HOURS
+
+    allowed = user.track_window_hours if user else TRACK_WINDOW_DEFAULT_HOURS
+    hours = min(hours, allowed) if hours is not None else allowed
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
     result = await session.execute(
         select(Position)

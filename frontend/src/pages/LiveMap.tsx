@@ -731,7 +731,9 @@ export default function LiveMap() {
       source?.setData({ type: 'FeatureCollection', features: [] })
       return
     }
-    api<TrackPoint[]>(`/vessels/${mmsi}/track?hours=72`).then((track) => {
+    // No ?hours= - the backend picks the window from the auth token: 72h for
+    // anonymous visitors, the signed-in user's saved preference otherwise.
+    api<TrackPoint[]>(`/vessels/${mmsi}/track`).then((track) => {
       const coords: [number, number][] = track.map((p) => [p.lon, p.lat])
       source?.setData({
         type: 'FeatureCollection',

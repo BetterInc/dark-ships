@@ -15,6 +15,7 @@ from typing import Optional
 
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin, schemas
+from pydantic import field_validator
 from fastapi_users.exceptions import InvalidPasswordException
 from fastapi_users.authentication import (
     AuthenticationBackend,
@@ -37,8 +38,16 @@ SECRET = get_settings().auth_secret
 
 # ---- schemas -------------------------------------------------------------
 
+# Vessel-track window bounds. Anonymous visitors are fixed at the default;
+# a registered user may raise it up to the max (server-enforced, so the cap
+# can't be bypassed by patching /users/me directly).
+TRACK_WINDOW_DEFAULT_HOURS = 72
+TRACK_WINDOW_MAX_HOURS = 24 * 30  # 30 days
+
+
 class UserRead(schemas.BaseUser[int]):
     role: str = "user"  # user | partner | admin
+    track_window_hours: int = TRACK_WINDOW_DEFAULT_HOURS
 
 
 class UserCreate(schemas.BaseUserCreate):
@@ -46,7 +55,14 @@ class UserCreate(schemas.BaseUserCreate):
 
 
 class UserUpdate(schemas.BaseUserUpdate):
-    pass
+    track_window_hours: Optional[int] = None
+
+    @field_validator("track_window_hours")
+    @classmethod
+    def _clamp_track_window(cls, v: Optional[int]) -> Optional[int]:
+        if v is None:
+            return v
+        return max(1, min(v, TRACK_WINDOW_MAX_HOURS))
 
 
 # ---- user database + manager --------------------------------------------

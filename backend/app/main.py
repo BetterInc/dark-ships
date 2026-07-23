@@ -60,6 +60,7 @@ async def init_db() -> None:
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS size_match BOOLEAN",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(16) NOT NULL DEFAULT 'user'",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_digest_at TIMESTAMPTZ",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS track_window_hours INTEGER NOT NULL DEFAULT 72",
             # automated SAR ship detection on stored position checks
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS analyzed_at TIMESTAMPTZ",
             "ALTER TABLE position_checks ADD COLUMN IF NOT EXISTS hull_detected BOOLEAN",

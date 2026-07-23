@@ -9,6 +9,7 @@ export interface User {
   is_active: boolean
   is_superuser: boolean
   is_verified: boolean
+  track_window_hours: number
 }
 
 interface AuthValue {
@@ -23,6 +24,7 @@ interface AuthValue {
   verifyEmail: (token: string) => Promise<void>
   resendVerification: (email: string) => Promise<void>
   googleAuthUrl: () => Promise<string>
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthValue | null>(null)
@@ -119,9 +121,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.authorization_url
   }
 
+  // Re-hydrate the user from the server (e.g. after they change a setting).
+  async function refreshUser() {
+    if (!getToken()) return
+    const me = await api<User>('/users/me')
+    setUser(me)
+  }
+
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, login, register, logout, forgotPassword, resetPassword, verifyEmail, resendVerification, googleAuthUrl }}
+      value={{ user, token, loading, login, register, logout, forgotPassword, resetPassword, verifyEmail, resendVerification, googleAuthUrl, refreshUser }}
     >
       {children}
     </AuthContext.Provider>
