@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/brammittendorff/dark-ships
+  IMAGE: ghcr.io/betterinc/dark-ships
 
 jobs:
   meta:
@@ -91,8 +91,31 @@ jobs:
             printf '%s' "$KC" > ~/.kube/config
           fi
           chmod 600 ~/.kube/config
+      # The cluster pulls from ghcr ANONYMOUSLY - this namespace has no
+      # imagePullSecret. A freshly published ghcr package is PRIVATE by default,
+      # so rolling onto one that has not been made public is an instant
+      # ImagePullBackOff on a live Deployment. Fail before touching anything.
+      - name: Verify the new image is anonymously pullable
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          SHA: ${{ needs.meta.outputs.sha }}
+        run: |
+          set -euo pipefail
+          REPO="${IMAGE#ghcr.io/}"
+          TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:${REPO}:pull&service=ghcr.io" \
+                  | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json" \
+            "https://ghcr.io/v2/${REPO}/manifests/${SHA}")
+          echo "anonymous pull of ${REPO}:${SHA} -> HTTP ${CODE}"
+          if [[ "$CODE" != "200" ]]; then
+            echo "::error::ghcr.io/${REPO}:${SHA} is not anonymously pullable (HTTP ${CODE}). The cluster has no imagePullSecret, so rolling would ImagePullBackOff. Make the package public at https://github.com/orgs/BetterInc/packages then re-run this job - production is untouched."
+            exit 1
+          fi
+
       # The k8s Deployments/Service/Ingress/ConfigMap are owned by the infra
-      # repo (prod-battle-infra modules/dark-ships). CI only rolls the image.
+      # repo (projects-infrastructure modules/dark-ships). CI only rolls the image.
       - name: Roll worker first (it runs migrations), then web
         if: steps.guard.outputs.skip != 'true'
         env:
