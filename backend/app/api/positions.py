@@ -116,7 +116,7 @@ async def feed_status(session: AsyncSession = Depends(get_session)):
     the map is showing last-known positions."""
     now = datetime.now(timezone.utc)
     # One unified position stream: age of the freshest fix from ANY provider
-    # (aisstream, digitraffic, ...). We don't distinguish sources here - a live
+    # (today: the OpenSeaFeed stream). We do not distinguish sources here - a live
     # feed is live no matter who delivered it.
     newest = await session.scalar(select(func.max(LatestPosition.ts)))
     age = int((now - newest).total_seconds()) if newest else None
@@ -128,13 +128,13 @@ async def feed_status(session: AsyncSession = Depends(get_session)):
         headers={"Cache-Control": "public, max-age=60"})
 
 
-# The integrated AIS providers, each folding one or more raw `source` tags. This
-# is the one place we surface provenance (a status display) - the stream itself
-# stays source-agnostic. `region`/`world` are both the aisstream firehose.
+# The integrated AIS providers, each folding one or more raw `source` tags.
+# Since the OpenSeaFeed switch there is exactly one live provider: the
+# platform's merged stream (itself fed by aisstream.io, Kystverket and
+# Digitraffic, deduped upstream). Old `digitraffic`/`kystverket` tags linger
+# on historical rows only.
 _PROVIDERS = [
-    ("aisstream", "Global (aisstream)", ("region", "world")),
-    ("digitraffic", "Finland (Digitraffic)", ("digitraffic",)),
-    ("kystverket", "Norway (Kystverket)", ("kystverket",)),
+    ("openseafeed", "OpenSeaFeed (global)", ("region", "world")),
 ]
 _PROVIDER_ONLINE_SECONDS = 15 * 60  # silent longer than this = offline
 

@@ -24,9 +24,17 @@ from .registry import RegistryTracker
 
 logger = logging.getLogger(__name__)
 
-AISSTREAM_URL = "wss://stream.aisstream.io/v0/stream"
+# OpenSeaFeed - our own community AIS platform, aisstream.io-compatible wire
+# format. It already merges and dedupes aisstream.io (global), Kystverket
+# (Norway) and Digitraffic (Finland), so dark-ships runs exactly ONE live
+# connection and no per-country collectors of its own. The API key is an
+# osf_live_* key (settings.aisstream_key).
+AISSTREAM_URL = "wss://stream.openseafeed.com/v1/stream"
 GLOBAL_BBOX = [[[-90.0, -180.0], [90.0, 180.0]]]
 FLUSH_INTERVAL_SECONDS = 2.0
+# asyncpg caps one statement at 32767 bind parameters; a busy flush used to
+# blow past that and drop the whole batch ("Failed to write N positions").
+INSERT_CHUNK_ROWS = 2000
 SNAPSHOT_MAINTENANCE_SECONDS = 60
 # Reconnect backoff. During a prolonged upstream outage (e.g. the July 2026
 # one, where stream.aisstream.io shed load with 503s for days) retrying every
@@ -124,7 +132,9 @@ class PositionBuffer:
                 continue
             try:
                 async with SessionLocal() as session:
-                    await session.execute(insert(Position), rows)
+                    for i in range(0, len(rows), INSERT_CHUNK_ROWS):
+                        await session.execute(
+                            insert(Position), rows[i:i + INSERT_CHUNK_ROWS])
                     # maintain the one-row-per-ship current picture: the API's
                     # "where is everything now" reads this instead of scanning
                     # position history
@@ -134,14 +144,17 @@ class PositionBuffer:
                         if cur is None or r["ts"] > cur["ts"]:
                             newest[r["mmsi"]] = r
                     from sqlalchemy.dialects.postgresql import insert as pg_ins
-                    stmt = pg_ins(LatestPosition).values(list(newest.values()))
-                    await session.execute(stmt.on_conflict_do_update(
-                        index_elements=["mmsi"],
-                        set_={c: getattr(stmt.excluded, c)
-                              for c in ("ts", "lat", "lon", "sog", "cog",
-                                        "heading", "nav_status", "ship_name", "source")},
-                        where=stmt.excluded.ts > LatestPosition.ts,
-                    ))
+                    newest_rows = list(newest.values())
+                    for i in range(0, len(newest_rows), INSERT_CHUNK_ROWS):
+                        stmt = pg_ins(LatestPosition).values(
+                            newest_rows[i:i + INSERT_CHUNK_ROWS])
+                        await session.execute(stmt.on_conflict_do_update(
+                            index_elements=["mmsi"],
+                            set_={c: getattr(stmt.excluded, c)
+                                  for c in ("ts", "lat", "lon", "sog", "cog",
+                                            "heading", "nav_status", "ship_name", "source")},
+                            where=stmt.excluded.ts > LatestPosition.ts,
+                        ))
                     now = datetime.now(timezone.utc)
                     minute = now.replace(second=0, microsecond=0)
                     self._hb_rows += len(rows)

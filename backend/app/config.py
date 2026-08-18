@@ -103,12 +103,8 @@ class Settings(BaseSettings):
     # a permanent source for the Gulf of Finland / northern Baltic - the Russian
     # shadow-fleet oil corridor - so that region stays live independent of
     # aisstream. Set false to disable.
-    digitraffic_enabled: bool = True
     # Free Norwegian AIS: Kystverket's anonymous AIVDM TCP stream (no key) -
     # real-time coast/North Sea coverage. Set false to disable.
-    kystverket_enabled: bool = True
-    kystverket_host: str = "153.44.253.27"
-    kystverket_port: int = 5631
     # Denmark DMA historical AIS (free open data, ~3-day-lagged daily CSV
     # archive). Batch enrichment of Danish / SW-Baltic track history for the
     # watchlist. OFF by default: each daily file is a ~700 MB-1 GB download.

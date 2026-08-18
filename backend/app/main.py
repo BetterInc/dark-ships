@@ -23,9 +23,7 @@ from .db import engine
 from .ingest.aisstream import start_ingest
 from .jobs.behavior import run_behavior_scan
 from .jobs.gap_detector import run_gap_detection
-from .ingest.digitraffic import run_digitraffic
 from .ingest.dma import run_dma_backfill
-from .ingest.aivdm_tcp import run_aivdm_feed
 from .jobs.partitions import ensure_partitions
 from .jobs.coverage import sweep_outage_gap_events
 from .jobs.notifier import run_follow_digests
@@ -157,11 +155,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     start_ingest(tasks)
     # free national AIS feeds that contribute to the same stream
-    if settings.kystverket_enabled:
-        tasks.append(asyncio.create_task(
-            run_aivdm_feed("kystverket", settings.kystverket_host,
-                           settings.kystverket_port, "kystverket"),
-            name="kystverket"))
+    # Norway (Kystverket), Finland (Digitraffic) and the aisstream.io world
+    # feed are no longer ingested here: OpenSeaFeed collects, dedupes and
+    # streams all of them, and the single AISSTREAM_URL connection above is
+    # that platform. (DMA historical backfill below is batch data, not a
+    # stream, and stays.)
 
     scheduler = AsyncIOScheduler(timezone="UTC")
     # NOTE: no next_run_time=None here - in APScheduler that adds the job
@@ -169,8 +167,6 @@ async def lifespan(app: FastAPI):
     # _initial_* tasks below cover the immediate run; the interval default
     # (first fire one interval after start) avoids doubling up.
     scheduler.add_job(run_gap_detection, "interval", minutes=5)
-    # free national AIS: always-on Baltic / Gulf of Finland coverage
-    scheduler.add_job(run_digitraffic, "interval", seconds=90)
     # Denmark DMA daily historical backfill (self-gates on dma_enabled; the
     # newest file is ~3 days behind, so run well after midnight UTC)
     scheduler.add_job(run_dma_backfill, "cron", hour=6, minute=30)
@@ -192,7 +188,6 @@ async def lifespan(app: FastAPI):
     # First runs shortly after startup, so you don't have to wait
     tasks.append(asyncio.create_task(_initial_gap_run()))
     tasks.append(asyncio.create_task(_initial_behavior_run()))
-    tasks.append(asyncio.create_task(_initial_digitraffic_run()))
 
     yield
 
@@ -208,14 +203,6 @@ async def _initial_gap_run() -> None:
         await run_gap_detection()
     except Exception:
         logger.exception("Initial gap detection run failed")
-
-
-async def _initial_digitraffic_run() -> None:
-    await asyncio.sleep(10)
-    try:
-        await run_digitraffic()  # get the Baltic live immediately on boot
-    except Exception:
-        logger.exception("Initial Digitraffic run failed")
 
 
 async def _initial_behavior_run() -> None:
