@@ -143,11 +143,11 @@ _PROVIDER_ONLINE_SECONDS = 15 * 60  # silent longer than this = offline
 async def feed_sources(session: AsyncSession = Depends(get_session)):
     """Per-provider health for the map's feed strip: for each integrated AIS
     source, how fresh its newest fix is and how many ships it currently leads.
-    Ships counts only vessels heard within the last 30 minutes - ships that
+    Ships counts only vessels heard within the last 10 minutes - ships that
     are ON THE AIR now - not the cumulative last-known table, which mixes a
     live tanker with one that went dark in a harbour last week."""
     now = datetime.now(timezone.utc)
-    fresh_cutoff = now - timedelta(minutes=30)
+    fresh_cutoff = now - timedelta(minutes=10)
     rows = (await session.execute(
         select(LatestPosition.source, func.max(LatestPosition.ts), func.count())
         .where(LatestPosition.ts > fresh_cutoff)
