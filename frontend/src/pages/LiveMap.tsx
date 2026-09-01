@@ -145,18 +145,12 @@ const COLORS: Record<string, string> = {
   other: '#34d399',        // green - behaviour flags only
   region: '#55708c',       // slate - ordinary traffic
 }
-const MAP_STYLE: maplibregl.StyleSpecification = {
-  version: 8,
-  sources: {
-    carto: {
-      type: 'raster',
-      tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '© OpenStreetMap contributors © CARTO',
-    },
-  },
-  layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
-}
+// OpenFreeMap serves this style straight from OpenStreetMap data with no key
+// and no signup, and is self-hostable if we ever want the map to depend on
+// nothing but us. CARTO, which this used to use, now stamps
+// "API KEY REQUIRED" across every tile - it still answers 200, so only a
+// rendered screenshot shows it.
+const MAP_STYLE = 'https://tiles.openfreemap.org/styles/dark'
 
 
 interface SearchHit {
@@ -201,8 +195,10 @@ interface AmbientInfo {
 }
 
 // Build a small triangle icon (pointing "up" = north) for each category, so
-// moving ships can render as rotatable arrows. Canvas-generated = no glyph
-// server needed (this offline style has none, which is why text symbols fail).
+// moving ships can render as rotatable arrows. Canvas-generated so the arrow
+// is tinted per category without shipping a sprite sheet, and so the ids stay
+// ours: the basemap style brings its own sprite, and these 'arrow-<category>'
+// names are the ones it does not use.
 // A sleek vessel-heading marker: a narrow arrow with a gently curved stern,
 // drawn at 2x and registered with pixelRatio 2 so it stays crisp when rotated.
 const ICON_PX = 2
